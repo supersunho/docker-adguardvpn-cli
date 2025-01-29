@@ -1,0 +1,20 @@
+version: "3"
+services:
+    adguard-vpn-cli:
+        image: ghcr.io/supersunho/docker-adguardvpn-cli:latest
+        restart: unless-stopped
+        container_name: adguard-vpn-cli
+        env_file: .env
+        healthcheck:
+            test: ping -c 1 www.google.com || exit 1
+            interval: 1m
+            timeout: 10s
+            retries: 1
+        cap_add:
+            - NET_ADMIN
+        devices:
+            - /dev/net/tun
+        ports:
+            - 6089:6089
+            - 6881:6881
+            - 6881:6881/udp
