@@ -113,7 +113,7 @@ docker compose up -d
 
 ## Usage
 
-아래는 AdgaurdVPNCLI를 사용해서 qBittorrent를 사용한 docker-compose.yml입니다.
+AdguardVPN-CLI + qBittorrent
 ```yml
 version: "3"
 services:
