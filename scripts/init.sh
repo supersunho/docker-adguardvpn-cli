@@ -14,6 +14,9 @@ export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-false}
 export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
 export ADGUARD_USE_QUIC=${ADGUARD_USE_QUIC:-false}
 
+echo "Updating Adguard VPN CLI..."
+adguardvpn-cli update
+
 echo "Login Adguard VPN and test connection..."
 adguardvpn-cli login -u "$ADGUARD_USERNAME" -p "$ADGUARD_PASSWORD"
 adguardvpn-cli config set-mode "$ADGUARD_CONNECTION_TYPE" 
