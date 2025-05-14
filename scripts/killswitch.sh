@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export ADGUARD_USE_KILL_SWITCH_TIME=${ADGUARD_USE_KILL_SWITCH_TIME:-30}
+export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-30}
 
 INITIAL_IP=$(curl -s https://ipinfo.io/ip)
 echo " > [Kill Switch] Initial IP: $INITIAL_IP"
@@ -9,7 +9,11 @@ VPN_IP=""
 VPN_CONNECTED=0
 
 while true; do
-    sleep $ADGUARD_USE_KILL_SWITCH_TIME
+    if [ "$VPN_CONNECTED" -eq 0 ]; then
+        sleep 5
+    else
+        sleep $ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
+    fi
     CURRENT_IP=$(curl -s https://ipinfo.io/ip)
     echo " > [Kill Switch] Initial IP: $INITIAL_IP / Current IP: $CURRENT_IP"
 

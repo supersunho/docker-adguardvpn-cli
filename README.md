@@ -128,29 +128,27 @@ services:
 
 ## Prerequisites
 
-| Variable                     | Description                        | Default value | Allow values |
-| ---------------------------- | ---------------------------------- | ------------- | ------------ |
-| ADGUARD_USERNAME             | Username for login                 | "username"    |              |
-| ADGUARD_PASSWORD             | Password for login                 | "password"    |              |
-| ADGUARD_CONNECTION_LOCATION  | Defaults to the last used location | "JP"          |              |
-| ADGUARD_CONNECTION_TYPE      | Set VPN operating mode             | "TUN"         | TUN / SOCKS5 |
-| ADGUARD_SOCKS5_USERNAME      | Set the SOCKS username             | "username"    |              |
-| ADGUARD_SOCKS5_PASSWORD      | Set the SOCKS password             | "password"    |              |
-| ADGUARD_SOCKS5_HOST          | Set the SOCKS listen host.         | "127.0.0.1"   |              |
-| ADGUARD_SOCKS5_PORT          | Set the SOCKS port                 | 1080          |              |
-| ADGUARD_SEND_REPORTS         | Send crash reports to developers   | false         | true / false |
-| ADGUARD_SET_SYSTEM_DNS       | Set the system DNS servers         | false         | true / false |
-| ADGUARD_USE_CUSTOM_DNS       | Use the custom DNS servers         | true          | true / false |
-| ADGUARD_CUSTOM_DNS           | Set the DNS upstream server        | "1.1.1.1"     |              |
-| ADGUARD_USE_QUIC             | Set whether to use QUIC protocol   | true          | true / false |
-| ADGUARD_USE_KILL_SWITCH      | Use the Kill Switch                | true          | true / false |
-| ADGUARD_USE_KILL_SWITCH_TIME | Check interval for Kill Switch     | 30            |              |
+| Variable                               | Description                        | Default value | Allow values |
+| -------------------------------------- | ---------------------------------- | ------------- | ------------ |
+| ADGUARD_USERNAME                       | Username for login                 | "username"    |              |
+| ADGUARD_PASSWORD                       | Password for login                 | "password"    |              |
+| ADGUARD_CONNECTION_LOCATION            | Defaults to the last used location | "JP"          |              |
+| ADGUARD_CONNECTION_TYPE                | Set VPN operating mode             | "TUN"         | TUN / SOCKS5 |
+| ADGUARD_SOCKS5_USERNAME                | Set the SOCKS username             | "username"    |              |
+| ADGUARD_SOCKS5_PASSWORD                | Set the SOCKS password             | "password"    |              |
+| ADGUARD_SOCKS5_HOST                    | Set the SOCKS listen host.         | "127.0.0.1"   |              |
+| ADGUARD_SOCKS5_PORT                    | Set the SOCKS port                 | 1080          |              |
+| ADGUARD_SEND_REPORTS                   | Send crash reports to developers   | false         | true / false |
+| ADGUARD_SET_SYSTEM_DNS                 | Set the system DNS servers         | false         | true / false |
+| ADGUARD_USE_CUSTOM_DNS                 | Use the custom DNS servers         | true          | true / false |
+| ADGUARD_CUSTOM_DNS                     | Set the DNS upstream server        | "1.1.1.1"     |              |
+| ADGUARD_USE_QUIC                       | Set whether to use QUIC protocol   | true          | true / false |
+| ADGUARD_USE_KILL_SWITCH                | Use the Kill Switch                | true          | true / false |
+| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Check interval for Kill Switch     | 30            |              |
 
-> [!IMPORTANT]
-> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 
-> [!IMPORTANT]
-> `ADGUARD_USE_KILL_SWITCH_TIME`: A very short check interval is not recommended.
+> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
