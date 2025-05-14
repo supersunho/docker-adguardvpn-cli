@@ -42,4 +42,4 @@ COPY --chmod=755 ./scripts/*.sh /app/scripts/
 
 EXPOSE ${ADGUARD_SOCKS5_PORT}
 
-ENTRYPOINT ["/app/scripts/init.sh"]
+ENTRYPOINT ["sh", "-c", "/app/scripts/docker-entrypoint.sh"]
