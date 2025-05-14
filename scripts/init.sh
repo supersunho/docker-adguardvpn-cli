@@ -14,10 +14,10 @@ export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-false}
 export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
 export ADGUARD_USE_QUIC=${ADGUARD_USE_QUIC:-false}
 
-echo "Updating Adguard VPN CLI..."
+echo " > Updating Adguard VPN CLI..."
 adguardvpn-cli update
 
-echo "Login Adguard VPN and test connection..."
+echo " > Login Adguard VPN and test connection..."
 adguardvpn-cli login -u "$ADGUARD_USERNAME" -p "$ADGUARD_PASSWORD"
 adguardvpn-cli config set-mode "$ADGUARD_CONNECTION_TYPE" 
 adguardvpn-cli connect -f -y
@@ -31,27 +31,26 @@ if [ "${ADGUARD_USE_QUIC,,}" = true ]; then
     adguardvpn-cli config set-use-quic on
 fi
 
-echo "Configure Adguard VPN" 
+echo " > Configure Adguard VPN" 
 if [ "${ADGUARD_SET_SYSTEM_DNS,,}" = false ]; then 
-    echo "adguardvpn-cli config set-system-dns off"
+    echo " > adguardvpn-cli config set-system-dns off"
     adguardvpn-cli config set-system-dns off
 fi
 
 if [ "${ADGUARD_SEND_REPORTS,,}" = false ]; then 
-    echo "adguardvpn-cli config send-reports off"
+    echo " > adguardvpn-cli config send-reports off"
     adguardvpn-cli config send-reports off
 fi
 
-echo "Running Adguard VPN" 
-echo "adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
+echo " > Running Adguard VPN" 
+echo " > adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "SOCKS" ]; then
     adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
     adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
 fi
 adguardvpn-cli connect -l "$ADGUARD_CONNECTION_LOCATION"
 
-echo "Testing Adguard VPN"
+echo " > Adguard VPN Status"
 
 adguardvpn-cli status
 
-tail -f /root/.local/share/adguardvpn-cli/app.log
