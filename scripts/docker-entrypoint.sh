@@ -37,3 +37,4 @@ else
     wait $TAIL_PID
 fi
 
+exit $INIT_EXIT_CODE
