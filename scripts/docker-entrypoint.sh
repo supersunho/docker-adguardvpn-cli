@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-false}
 
