@@ -2,10 +2,8 @@
 
 export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-30}
 
-INITIAL_IP_INFO=$(curl -s https://ipinfo.io)
-INITIAL_IP=$(echo "$INITIAL_IP_INFO" | awk -F'"' '/"ip":/ {print $4}')
-INITIAL_IP_COUNTRY=$(echo "$INITIAL_IP_INFO" | awk -F'"' '/"country":/ {print $4}')
-echo " > [Kill Switch] Initial IP: $INITIAL_IP($INITIAL_IP_COUNTRY)"
+INITIAL_IP=$(curl -s https://ifconfig.me)
+echo " > [Kill Switch] Initial IP: $INITIAL_IP" 
 
 VPN_IP=""
 VPN_CONNECTED=0
@@ -17,10 +15,8 @@ while true; do
         sleep $ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
     fi
  
-    CURRENT_IP_INFO=$(curl -s https://ipinfo.io)
-    CURRENT_IP=$(echo "$CURRENT_IP_INFO" | awk -F'"' '/"ip":/ {print $4}')
-    CURRENT_IP_COUNTRY=$(echo "$CURRENT_IP_INFO" | awk -F'"' '/"country":/ {print $4}')
-    echo " > [Kill Switch] Initial IP: $INITIAL_IP($INITIAL_IP_COUNTRY) => Current IP: $CURRENT_IP($CURRENT_IP_COUNTRY)"
+    CURRENT_IP=$(curl -s https://ifconfig.me)
+    echo " > [Kill Switch] Initial IP: $INITIAL_IP => Current IP: $CURRENT_IP" 
 
     if [ "$VPN_CONNECTED" -eq 0 ]; then
         # If VPN is not connected yet, detect the first IP change (assume VPN connected)
