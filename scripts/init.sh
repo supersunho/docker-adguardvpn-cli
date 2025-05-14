@@ -43,7 +43,7 @@ if [ "${ADGUARD_SEND_REPORTS,,}" = false ]; then
 fi
 
 echo "Running Adguard VPN" 
-Log "adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
+echo "adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "SOCKS" ]; then
     adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
     adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
@@ -51,6 +51,7 @@ fi
 adguardvpn-cli connect -l "$ADGUARD_CONNECTION_LOCATION"
 
 echo "Testing Adguard VPN"
+
 adguardvpn-cli status
 
 tail -f /root/.local/share/adguardvpn-cli/app.log

@@ -22,7 +22,7 @@
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url] 
+[![Issues][issues-shield]][issues-url]
 
 <!-- PROJECT LOGO -->
 <br />
@@ -46,8 +46,6 @@
     <a href="https://github.com/supersunho/docker-adguardvpn-cli/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
-
- 
 
 <!-- ABOUT THE PROJECT -->
 
@@ -80,40 +78,12 @@ This project allows you to use AdguardVPN-CLI within a Docker container. It prov
 
 Before proceeding, please review the following content and create your .env file accordingly. You can refer to the .env.sample file provided in this repository for guidance.
 
-### Prerequisites
-
-| Variable                    | Description                        | Default value | Allow values |
-| --------------------------- | ---------------------------------- | ------------- | ------------ |
-| ADGUARD_USERNAME            | Username for login                 | "username"    |              |
-| ADGUARD_PASSWORD            | Password for login                 | "password"    |              |
-| ADGUARD_CONNECTION_LOCATION | Defaults to the last used location | "JP"          |
-| ADGUARD_CONNECTION_TYPE     | Set VPN operating mode             | "TUN"         | TUN / SOCKS5 |
-| ADGUARD_SOCKS5_USERNAME     | Set the SOCKS username             | "username"    |              |
-| ADGUARD_SOCKS5_PASSWORD     | Set the SOCKS password             | "password"    |              |
-| ADGUARD_SOCKS5_HOST         | Set the SOCKS listen host.         | "127.0.0.1"   |              |
-| ADGUARD_SOCKS5_PORT         | Set the SOCKS port                 | 1080          |              |
-| ADGUARD_SEND_REPORTS        | Send crash reports to developers   | false         |              |
-| ADGUARD_SET_SYSTEM_DNS      | Set the system DNS servers         | false         |              |
-| ADGUARD_USE_CUSTOM_DNS      | Use the custom DNS servers         | true          |              |
-| ADGUARD_CUSTOM_DNS          | Set the DNS upstream server        | "1.1.1.1"     |              |
-| ADGUARD_USE_QUIC            | Set whether to use QUIC protocol   | true          |              |
-
-> [!IMPORTANT]
-> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
-
-### Installation
-
-```sh
-docker compose up -d
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!-- USAGE EXAMPLES -->
 
-## Usage
+## How to use
 
 AdguardVPN-CLI + qBittorrent
+
 ```yml
 version: "3"
 services:
@@ -137,13 +107,11 @@ services:
             - 6881:6881/udp
     qbittorrent:
         image: linuxserver/qbittorrent:latest
-        labels:
-            - "com.centurylinklabs.watchtower.enable=false"
         container_name: qbittorrent
         environment:
             - PUID=0
-            - PGID=0 
-            - TZ=Asia/Seoul 
+            - PGID=0
+            - TZ=Asia/Seoul
         volumes:
             - ./config:/config
             - ./downloads:/downloads
@@ -154,17 +122,113 @@ services:
         depends_on:
             - adguard-vpn-cli
         network_mode: service:adguard-vpn-cli
-
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
- 
+## Prerequisites
+
+| Variable                     | Description                        | Default value | Allow values |
+| ---------------------------- | ---------------------------------- | ------------- | ------------ |
+| ADGUARD_USERNAME             | Username for login                 | "username"    |              |
+| ADGUARD_PASSWORD             | Password for login                 | "password"    |              |
+| ADGUARD_CONNECTION_LOCATION  | Defaults to the last used location | "JP"          |              |
+| ADGUARD_CONNECTION_TYPE      | Set VPN operating mode             | "TUN"         | TUN / SOCKS5 |
+| ADGUARD_SOCKS5_USERNAME      | Set the SOCKS username             | "username"    |              |
+| ADGUARD_SOCKS5_PASSWORD      | Set the SOCKS password             | "password"    |              |
+| ADGUARD_SOCKS5_HOST          | Set the SOCKS listen host.         | "127.0.0.1"   |              |
+| ADGUARD_SOCKS5_PORT          | Set the SOCKS port                 | 1080          |              |
+| ADGUARD_SEND_REPORTS         | Send crash reports to developers   | false         | true / false |
+| ADGUARD_SET_SYSTEM_DNS       | Set the system DNS servers         | false         | true / false |
+| ADGUARD_USE_CUSTOM_DNS       | Use the custom DNS servers         | true          | true / false |
+| ADGUARD_CUSTOM_DNS           | Set the DNS upstream server        | "1.1.1.1"     |              |
+| ADGUARD_USE_QUIC             | Set whether to use QUIC protocol   | true          | true / false |
+| ADGUARD_USE_KILL_SWITCH      | Use the Kill Switch                | true          | true / false |
+| ADGUARD_USE_KILL_SWITCH_TIME | Check interval for Kill Switch     | 30            |              |
+
+> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+
+> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_TIME`: A very short check interval is not recommended.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Location
+
+Please check the location and add the ISO code to `ADGUARD_CONNECTION_LOCATION`
+
+| ISO | Country        |
+| :-- | :------------- |
+| KR  | South Korea    |
+| HK  | Hong Kong      |
+| JP  | Japan          |
+| SG  | Singapore      |
+| CN  | China          |
+| KH  | Cambodia       |
+| VN  | Vietnam        |
+| PH  | Philippines    |
+| ZA  | South Africa   |
+| IN  | India          |
+| TH  | Thailand       |
+| NP  | Nepal          |
+| ID  | Indonesia      |
+| US  | United States  |
+| TW  | Taiwan         |
+| CA  | Canada         |
+| AU  | Australia      |
+| MX  | Mexico         |
+| IT  | Italy          |
+| ES  | Spain          |
+| NZ  | New Zealand    |
+| LU  | Luxembourg     |
+| CZ  | Czechia        |
+| GB  | United Kingdom |
+| HU  | Hungary        |
+| CO  | Colombia       |
+| UA  | Ukraine        |
+| RS  | Serbia         |
+| EG  | Egypt          |
+| PE  | Peru           |
+| DE  | Germany        |
+| PT  | Portugal       |
+| NL  | Netherlands    |
+| LT  | Lithuania      |
+| CH  | Switzerland    |
+| BE  | Belgium        |
+| IS  | Iceland        |
+| DK  | Denmark        |
+| FR  | France         |
+| LV  | Latvia         |
+| NO  | Norway         |
+| EE  | Estonia        |
+| AT  | Austria        |
+| HR  | Croatia        |
+| FI  | Finland        |
+| RU  | Russia         |
+| RO  | Romania        |
+| CY  | Cyprus         |
+| IE  | Ireland        |
+| BG  | Bulgaria       |
+| SK  | Slovakia       |
+| TR  | Turkey         |
+| IR  | Iran           |
+| SE  | Sweden         |
+| AR  | Argentina      |
+| IL  | Israel         |
+| MD  | Moldova        |
+| PL  | Poland         |
+| CL  | Chile          |
+| KZ  | Kazakhstan     |
+| BR  | Brazil         |
+| AE  | UAE            |
+| GR  | Greece         |
+| NG  | Nigeria        |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- ACKNOWLEDGMENTS -->
 
 ## References
 
--   [AdguardTeam/AdGuardVPNCLI](https://github.com/AdguardTeam/AdGuardVPNCLI) 
+-   [AdguardTeam/AdGuardVPNCLI](https://github.com/AdguardTeam/AdGuardVPNCLI)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
