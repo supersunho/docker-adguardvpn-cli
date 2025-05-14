@@ -55,8 +55,6 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!--
 
 ### Built With
@@ -159,91 +157,90 @@ services:
 Please check the location and add the city, country or ISO code to `ADGUARD_CONNECTION_LOCATION`
 
 | ISO | Country        | City             |
-|:-----|:---------------|:------------------|
-| KR  | South Korea   | Seoul            |
-| HK  | Hong Kong     | Hong Kong        |
-| JP  | Japan         | Tokyo            |
-| SG  | Singapore     | Singapore        |
+|:----|:--------------|:-----------------|
+| AE  | UAE           | Dubai            |
+| AR  | Argentina     | Buenos Aires     |
+| AT  | Austria       | Vienna           |
+| AU  | Australia     | Sydney           |
+| BE  | Belgium       | Brussels         |
+| BG  | Bulgaria      | Sofia            |
+| BR  | Brazil        | São Paulo        |
+| CA  | Canada        | Vancouver        |
+| CA  | Canada        | Montreal         |
+| CA  | Canada        | Toronto          |
+| CH  | Switzerland   | Zurich           |
+| CL  | Chile         | Santiago         |
 | CN  | China         | Shanghai         |
-| KH  | Cambodia      | Phnom Penh       |
-| VN  | Vietnam       | Hanoi            |
-| PH  | Philippines   | Manila           |
-| ZA  | South Africa  | Johannesburg     |
-| IN  | India         | Mumbai           |
-| TH  | Thailand      | Bangkok          |
-| NP  | Nepal         | Kathmandu        |
+| CO  | Colombia      | Bogota           |
+| CY  | Cyprus        | Nicosia          |
+| CZ  | Czechia       | Prague           |
+| DE  | Germany       | Berlin           |
+| DE  | Germany       | Frankfurt        |
+| DK  | Denmark       | Copenhagen       |
+| EE  | Estonia       | Tallinn          |
+| EG  | Egypt         | Cairo            |
+| ES  | Spain         | Barcelona        |
+| ES  | Spain         | Madrid           |
+| FI  | Finland       | Helsinki         |
+| FR  | France        | Paris            |
+| FR  | France        | Marseille        |
+| GB  | United Kingdom| Manchester       |
+| GB  | United Kingdom| London           |
+| GR  | Greece        | Athens           |
+| HK  | Hong Kong     | Hong Kong        |
+| HR  | Croatia       | Zagreb           |
+| HU  | Hungary       | Budapest         |
 | ID  | Indonesia     | Jakarta          |
-| US  | United States | Seattle          |
+| IE  | Ireland       | Dublin           |
+| IL  | Israel        | Tel Aviv         |
+| IN  | India         | Mumbai           |
+| IR  | Iran          | Tehran           |
+| IS  | Iceland       | Reykjavik        |
+| IT  | Italy         | Rome             |
+| IT  | Italy         | Milan            |
+| IT  | Italy         | Palermo          |
+| JP  | Japan         | Tokyo            |
+| KH  | Cambodia      | Phnom Penh       |
+| KR  | South Korea   | Seoul            |
+| KZ  | Kazakhstan    | Astana           |
+| LT  | Lithuania     | Vilnius          |
+| LU  | Luxembourg    | Luxembourg       |
+| LV  | Latvia        | Riga             |
+| MD  | Moldova       | Chișinău         |
+| MX  | Mexico        | Mexico City      |
+| NG  | Nigeria       | Lagos            |
+| NL  | Netherlands   | Amsterdam        |
+| NO  | Norway        | Oslo             |
+| NP  | Nepal         | Kathmandu        |
+| NZ  | New Zealand   | Auckland         |
+| PE  | Peru          | Lima             |
+| PH  | Philippines   | Manila           |
+| PL  | Poland        | Warsaw           |
+| PT  | Portugal      | Lisbon           |
+| RO  | Romania       | Bucharest        |
+| RS  | Serbia        | Belgrade         |
+| RU  | Russia        | Moscow           |
+| SE  | Sweden        | Stockholm        |
+| SG  | Singapore     | Singapore        |
+| SK  | Slovakia      | Bratislava       |
+| TH  | Thailand      | Bangkok          |
+| TR  | Turkey        | Istanbul         |
 | TW  | Taiwan        | Taipei           |
+| UA  | Ukraine       | Kyiv             |
+| US  | United States | Seattle          |
 | US  | United States | Silicon Valley   |
 | US  | United States | Phoenix          |
-| CA  | Canada        | Vancouver        |
 | US  | United States | Las Vegas        |
-| AU  | Australia     | Sydney           |
 | US  | United States | Denver           |
 | US  | United States | Dallas           |
 | US  | United States | Los Angeles      |
 | US  | United States | Atlanta          |
 | US  | United States | New York         |
-| MX  | Mexico        | Mexico City      |
-| CA  | Canada        | Montreal         |
 | US  | United States | Miami            |
 | US  | United States | Boston           |
-| IT  | Italy         | Rome             |
-| ES  | Spain         | Barcelona        |
-| NZ  | New Zealand   | Auckland         |
-| LU  | Luxembourg    | Luxembourg       |
-| CZ  | Czechia       | Prague           |
-| GB  | United Kingdom| Manchester       |
-| HU  | Hungary       | Budapest         |
-| CO  | Colombia      | Bogota           |
-| UA  | Ukraine       | Kyiv             |
-| RS  | Serbia        | Belgrade         |
 | US  | United States | Chicago          |
-| EG  | Egypt         | Cairo            |
-| PE  | Peru          | Lima             |
-| ES  | Spain         | Madrid           |
-| DE  | Germany       | Berlin           |
-| PT  | Portugal      | Lisbon           |
-| NL  | Netherlands   | Amsterdam        |
-| LT  | Lithuania     | Vilnius          |
-| CH  | Switzerland   | Zurich           |
-| BE  | Belgium       | Brussels         |
-| IS  | Iceland       | Reykjavik        |
-| DK  | Denmark       | Copenhagen       |
-| GB  | United Kingdom| London           |
-| CA  | Canada        | Toronto          |
-| FR  | France        | Paris            |
-| LV  | Latvia        | Riga             |
-| FR  | France        | Marseille        |
-| NO  | Norway        | Oslo             |
-| EE  | Estonia       | Tallinn          |
-| DE  | Germany       | Frankfurt        |
-| AT  | Austria       | Vienna           |
-| HR  | Croatia       | Zagreb           |
-| FI  | Finland       | Helsinki         |
-| RU  | Russia        | Moscow           |
-| RO  | Romania       | Bucharest        |
-| CY  | Cyprus        | Nicosia          |
-| IE  | Ireland       | Dublin           |
-| BG  | Bulgaria      | Sofia            |
-| IT  | Italy         | Milan            |
-| SK  | Slovakia      | Bratislava       |
-| TR  | Turkey        | Istanbul         |
-| IR  | Iran          | Tehran           |
-| SE  | Sweden        | Stockholm        |
-| AR  | Argentina     | Buenos Aires     |
-| IL  | Israel        | Tel Aviv         |
-| MD  | Moldova       | Chișinău         |
-| PL  | Poland        | Warsaw           |
-| CL  | Chile         | Santiago         |
-| KZ  | Kazakhstan    | Astana           |
-| BR  | Brazil        | São Paulo        |
-| AE  | UAE           | Dubai            |
-| GR  | Greece        | Athens           |
-| IT  | Italy         | Palermo          |
-| NG  | Nigeria       | Lagos            |
-
+| VN  | Vietnam       | Hanoi            |
+| ZA  | South Africa  | Johannesburg     |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- ACKNOWLEDGMENTS -->
