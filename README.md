@@ -156,74 +156,94 @@ services:
 
 ## Location
 
-Please check the location and add the ISO code to `ADGUARD_CONNECTION_LOCATION`
+Please check the location and add the city, country or ISO code to `ADGUARD_CONNECTION_LOCATION`
 
-| ISO | Country        |
-| :-- | :------------- |
-| KR  | South Korea    |
-| HK  | Hong Kong      |
-| JP  | Japan          |
-| SG  | Singapore      |
-| CN  | China          |
-| KH  | Cambodia       |
-| VN  | Vietnam        |
-| PH  | Philippines    |
-| ZA  | South Africa   |
-| IN  | India          |
-| TH  | Thailand       |
-| NP  | Nepal          |
-| ID  | Indonesia      |
-| US  | United States  |
-| TW  | Taiwan         |
-| CA  | Canada         |
-| AU  | Australia      |
-| MX  | Mexico         |
-| IT  | Italy          |
-| ES  | Spain          |
-| NZ  | New Zealand    |
-| LU  | Luxembourg     |
-| CZ  | Czechia        |
-| GB  | United Kingdom |
-| HU  | Hungary        |
-| CO  | Colombia       |
-| UA  | Ukraine        |
-| RS  | Serbia         |
-| EG  | Egypt          |
-| PE  | Peru           |
-| DE  | Germany        |
-| PT  | Portugal       |
-| NL  | Netherlands    |
-| LT  | Lithuania      |
-| CH  | Switzerland    |
-| BE  | Belgium        |
-| IS  | Iceland        |
-| DK  | Denmark        |
-| FR  | France         |
-| LV  | Latvia         |
-| NO  | Norway         |
-| EE  | Estonia        |
-| AT  | Austria        |
-| HR  | Croatia        |
-| FI  | Finland        |
-| RU  | Russia         |
-| RO  | Romania        |
-| CY  | Cyprus         |
-| IE  | Ireland        |
-| BG  | Bulgaria       |
-| SK  | Slovakia       |
-| TR  | Turkey         |
-| IR  | Iran           |
-| SE  | Sweden         |
-| AR  | Argentina      |
-| IL  | Israel         |
-| MD  | Moldova        |
-| PL  | Poland         |
-| CL  | Chile          |
-| KZ  | Kazakhstan     |
-| BR  | Brazil         |
-| AE  | UAE            |
-| GR  | Greece         |
-| NG  | Nigeria        |
+| ISO | Country        | City             |
+|:-----|:---------------|:------------------|
+| KR  | South Korea   | Seoul            |
+| HK  | Hong Kong     | Hong Kong        |
+| JP  | Japan         | Tokyo            |
+| SG  | Singapore     | Singapore        |
+| CN  | China         | Shanghai         |
+| KH  | Cambodia      | Phnom Penh       |
+| VN  | Vietnam       | Hanoi            |
+| PH  | Philippines   | Manila           |
+| ZA  | South Africa  | Johannesburg     |
+| IN  | India         | Mumbai           |
+| TH  | Thailand      | Bangkok          |
+| NP  | Nepal         | Kathmandu        |
+| ID  | Indonesia     | Jakarta          |
+| US  | United States | Seattle          |
+| TW  | Taiwan        | Taipei           |
+| US  | United States | Silicon Valley   |
+| US  | United States | Phoenix          |
+| CA  | Canada        | Vancouver        |
+| US  | United States | Las Vegas        |
+| AU  | Australia     | Sydney           |
+| US  | United States | Denver           |
+| US  | United States | Dallas           |
+| US  | United States | Los Angeles      |
+| US  | United States | Atlanta          |
+| US  | United States | New York         |
+| MX  | Mexico        | Mexico City      |
+| CA  | Canada        | Montreal         |
+| US  | United States | Miami            |
+| US  | United States | Boston           |
+| IT  | Italy         | Rome             |
+| ES  | Spain         | Barcelona        |
+| NZ  | New Zealand   | Auckland         |
+| LU  | Luxembourg    | Luxembourg       |
+| CZ  | Czechia       | Prague           |
+| GB  | United Kingdom| Manchester       |
+| HU  | Hungary       | Budapest         |
+| CO  | Colombia      | Bogota           |
+| UA  | Ukraine       | Kyiv             |
+| RS  | Serbia        | Belgrade         |
+| US  | United States | Chicago          |
+| EG  | Egypt         | Cairo            |
+| PE  | Peru          | Lima             |
+| ES  | Spain         | Madrid           |
+| DE  | Germany       | Berlin           |
+| PT  | Portugal      | Lisbon           |
+| NL  | Netherlands   | Amsterdam        |
+| LT  | Lithuania     | Vilnius          |
+| CH  | Switzerland   | Zurich           |
+| BE  | Belgium       | Brussels         |
+| IS  | Iceland       | Reykjavik        |
+| DK  | Denmark       | Copenhagen       |
+| GB  | United Kingdom| London           |
+| CA  | Canada        | Toronto          |
+| FR  | France        | Paris            |
+| LV  | Latvia        | Riga             |
+| FR  | France        | Marseille        |
+| NO  | Norway        | Oslo             |
+| EE  | Estonia       | Tallinn          |
+| DE  | Germany       | Frankfurt        |
+| AT  | Austria       | Vienna           |
+| HR  | Croatia       | Zagreb           |
+| FI  | Finland       | Helsinki         |
+| RU  | Russia        | Moscow           |
+| RO  | Romania       | Bucharest        |
+| CY  | Cyprus        | Nicosia          |
+| IE  | Ireland       | Dublin           |
+| BG  | Bulgaria      | Sofia            |
+| IT  | Italy         | Milan            |
+| SK  | Slovakia      | Bratislava       |
+| TR  | Turkey        | Istanbul         |
+| IR  | Iran          | Tehran           |
+| SE  | Sweden        | Stockholm        |
+| AR  | Argentina     | Buenos Aires     |
+| IL  | Israel        | Tel Aviv         |
+| MD  | Moldova       | Chișinău         |
+| PL  | Poland        | Warsaw           |
+| CL  | Chile         | Santiago         |
+| KZ  | Kazakhstan    | Astana           |
+| BR  | Brazil        | São Paulo        |
+| AE  | UAE           | Dubai            |
+| GR  | Greece        | Athens           |
+| IT  | Italy         | Palermo          |
+| NG  | Nigeria       | Lagos            |
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- ACKNOWLEDGMENTS -->
