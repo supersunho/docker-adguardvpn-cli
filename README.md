@@ -146,9 +146,11 @@ services:
 | ADGUARD_USE_KILL_SWITCH      | Use the Kill Switch                | true          | true / false |
 | ADGUARD_USE_KILL_SWITCH_TIME | Check interval for Kill Switch     | 30            |              |
 
-> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> [!IMPORTANT]
+> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 
-> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_TIME`: A very short check interval is not recommended.
+> [!IMPORTANT]
+> `ADGUARD_USE_KILL_SWITCH_TIME`: A very short check interval is not recommended.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
