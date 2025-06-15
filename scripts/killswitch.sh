@@ -2,7 +2,7 @@
 
 export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-30}
 
-INITIAL_IP=$(curl -s https://ifconfig.me)
+INITIAL_IP=$(curl -s https://ifconfig.me/ip)
 echo " > [Kill Switch] Initial IP: $INITIAL_IP" 
 
 VPN_IP=""
@@ -15,7 +15,7 @@ while true; do
         sleep $ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
     fi
  
-    CURRENT_IP=$(curl -s https://ifconfig.me)
+    CURRENT_IP=$(curl -s https://ifconfig.me/ip)
     echo " > [Kill Switch] Initial IP: $INITIAL_IP => Current IP: $CURRENT_IP" 
 
     if [ "$VPN_CONNECTED" -eq 0 ]; then
