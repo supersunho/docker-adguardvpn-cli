@@ -33,13 +33,13 @@ fi
 
 echo " > Configure Adguard VPN" 
 if [ "${ADGUARD_SET_SYSTEM_DNS,,}" = false ]; then 
-    echo " > adguardvpn-cli config set-system-dns off"
-    adguardvpn-cli config set-system-dns off
+    echo " > adguardvpn-cli config set-change-system-dns  off"
+    adguardvpn-cli config set-change-system-dns off
 fi
 
 if [ "${ADGUARD_SEND_REPORTS,,}" = false ]; then 
-    echo " > adguardvpn-cli config send-reports off"
-    adguardvpn-cli config send-reports off
+    echo " > adguardvpn-cli config set-crash-reporting off"
+    adguardvpn-cli config set-crash-reporting off
 fi
 
 echo " > Running Adguard VPN" 
