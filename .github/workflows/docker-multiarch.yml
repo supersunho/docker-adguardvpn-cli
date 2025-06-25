@@ -13,9 +13,11 @@ on:
                 type: choice
                 default: "ubuntu-latest"
                 options:
-                    - "ubuntu-latest"
                     - "ubuntu-24.04"
                     - "ubuntu-22.04"
+                    - "ubuntu-24.04-arm"
+                    - "ubuntu-22.04-arm"
+                    - "ubuntu-latest"
 
             version:
                 description: "AdGuard VPN CLI version (e.g., v1.2.3, latest for newest)"
