@@ -92,7 +92,7 @@ jobs:
                   # keep numeric part only     -> 1.2.37
                   VERSION_BASE=${VERSION_CLEAN%%-*}
 
-                  echo "🏷️  Target tag        : $VERSION"
+                  echo "🏷️ Target tag        : $VERSION"
                   echo "🔢 Clean tag         : $VERSION_CLEAN"
                   echo "🔑 Numeric-only tag  : $VERSION_BASE"
 
