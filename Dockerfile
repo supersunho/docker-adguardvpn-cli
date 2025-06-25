@@ -1,5 +1,7 @@
 FROM ubuntu:24.04 AS base
+ARG AGCLI_VERSION=latest          
 
+ENV USER=root                     
 ENV DEBIAN_FRONTEND=noninteractive 
 
 RUN echo "🔍 Setting up Ubuntu 24.04 LTS build environment..." && \
@@ -28,7 +30,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "✅ CA certificates updated"
 
 # Download and install AdGuard VPN CLI
-RUN curl -fsSL https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/HEAD/scripts/release/install.sh | sed 's/read -r response < \/dev\/tty/response=y/' | sh -s -- -v
+RUN curl -fsSL https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/HEAD/scripts/release/install.sh \
+    | sh -s -- -V "$AGCLI_VERSION" -a y
 
 WORKDIR /opt/adguardvpn_cli
 COPY --chmod=755 ./scripts/*.sh ./scripts/
