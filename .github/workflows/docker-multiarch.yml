@@ -208,7 +208,7 @@ jobs:
                   path: |
                       /tmp/apt-cache
                       /tmp/apt-lib
-                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.version_clean }}
+                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
                   restore-keys: |
                       ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-
 
@@ -222,22 +222,22 @@ jobs:
                   push: true
                   no-cache: ${{ github.event.inputs.clear_cache == 'true' }}
                   cache-from: |
-                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_clean }}
+                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
                   cache-to: |
-                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_clean }}
+                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
                   build-args: |
                       AGCLI_VERSION=${{ needs.prepare.outputs.version_base  }}
                   tags: |
-                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}
+                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
-                      ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}
+                      ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}
                       ${{ env.DOCKERHUB_REPO }}:latest-${{ matrix.arch }}
                   provenance: false
 
             - name: 🧪 Comprehensive container verification
               if: steps.check-images.outputs.build_image == 'true' && github.event.inputs.verify_build == 'true'
               run: |
-                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}"
+                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
                   # Test 1 – Binary presence
@@ -318,7 +318,7 @@ jobs:
 
             - name: 🏷️ Create multi-arch manifests
               run: |
-                  VERSION="${{ needs.prepare.outputs.version_clean }}"
+                  VERSION="${{ needs.prepare.outputs.version_base }}"
                   echo "📦 Creating multi-arch manifests for version $VERSION..."
 
                   for registry in ghcr dockerhub; do
@@ -378,7 +378,7 @@ jobs:
                   echo "## 🚀 AdGuard VPN CLI Multi-Arch Build Summary" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "**Build Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-                  echo "**Version**: ${{ needs.prepare.outputs.version }} (Clean: ${{ needs.prepare.outputs.version_clean }})" >> $GITHUB_STEP_SUMMARY
+                  echo "**Version**: ${{ needs.prepare.outputs.version }} (Clean: ${{ needs.prepare.outputs.version_base }})" >> $GITHUB_STEP_SUMMARY
                   echo "**Workflow**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -397,8 +397,8 @@ jobs:
 
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "### 🐳 Container Images" >> $GITHUB_STEP_SUMMARY
-                  echo "- **Docker Hub**: \`${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- **GHCR**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **Docker Hub**: \`${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}\`" >> $GITHUB_STEP_SUMMARY
+                  echo "- **GHCR**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}\`" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "### 🚀 Quick Start" >> $GITHUB_STEP_SUMMARY
                   echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
