@@ -430,35 +430,48 @@ jobs:
     ##############################################################################
     create-release:
         needs: [prepare, merge-manifests, summary]
-        if: always() && needs.merge-manifests.result == 'success'
         runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
         permissions:
             contents: write
         steps:
-            - name: 📥 Download release assets
+            - name: 📥 Download digest artifacts
               uses: actions/download-artifact@v4
               with:
-                  path: /tmp
-                  pattern: release-body
+                  path: /tmp/digests
+                  pattern: digests-*
+                  merge-multiple: true
 
             - name: 🏷️ Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.version }}-build-${{ github.run_number }}
                   name: "AdGuard VPN CLI ${{ needs.prepare.outputs.version }} (Build #${{ github.run_number }})"
-                  body_path: /tmp/release_body.md
+                  body: |
+                      # 🚀 AdGuard VPN CLI ${{ needs.prepare.outputs.version }}
+
+                      **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
+                      **Architecture Targets**: amd64 · arm64 · armv7  
+                      **Registries**: GHCR (`ghcr.io`) & Docker Hub
+
+                      ## 📦 Image Digests
+                      | Architecture | Digest |
+                      |--------------|--------|
+                      {% for f in /tmp/digests/*/digest.txt %}
+                      {%   set arch = f | dirname | basename %}
+                      {%   set digest = (f | file_contents).strip() %}
+                      | {{ arch }} | `{{ digest[:12] }}…` |
+                      {% endfor %}
+
+                      ## 🚀 Quick Pull
+                      ```
+                      # auto-detect arch
+                      docker pull ghcr.io/${{ github.repository }}:latest
+                      # or a specific arch tag
+                      docker pull ghcr.io/${{ github.repository }}:latest-arm64
+                      ```
                   files: /tmp/digests/*/digest.txt
                   draft: false
                   prerelease: false
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: 🎉 Release completion
-              run: |
-                  echo "🎉 GitHub Release created successfully!"
-                  echo "🏷️ Tag: ${{ needs.prepare.outputs.version }}-build-${{ github.run_number }}"
-                  echo "📦 Containers: Available on Docker Hub and GHCR"
-                  echo "🔗 Release URL: ${{ github.server_url }}/${{ github.repository }}/releases"
 
     ##############################################################################
     # 6) Final build analytics
