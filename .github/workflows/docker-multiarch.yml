@@ -302,7 +302,7 @@ jobs:
               with:
                   path: /tmp/digests
                   pattern: digests-*
-                  merge-multiple: true
+                  merge-multiple: false
 
             - name: 🔍 Debug Check downloaded artifacts
               run: |
@@ -351,6 +351,7 @@ jobs:
                   echo "📦 Creating multi-arch manifests for automatic architecture detection..."
                   echo "🎯 Target version: $VERSION"
 
+                  ls -al /tmp/digests
                   # Verify all architecture images exist
                   AVAILABLE_ARCHS=""
                   for arch in amd64 arm64 armv7; do
