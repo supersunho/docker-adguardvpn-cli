@@ -68,25 +68,40 @@ jobs:
         outputs:
             version: ${{ steps.get-version.outputs.version }}
             version_clean: ${{ steps.get-version.outputs.version_clean }}
+            version_base: ${{ steps.get-version.outputs.version_base }}
             matrix: ${{ steps.generate-matrix.outputs.matrix }}
+
         steps:
+            # ------------------------------------------------------------
+            # ① Detect target tag
+            # ------------------------------------------------------------
             - name: 🔍 Fetch latest AdGuard VPN CLI version
               id: get-version
               run: |
-                  if [ "${{ github.event.inputs.version }}" = "latest" ] || [ "${{ github.event.inputs.version }}" = "" ]; then
+                  if [ "${{ github.event.inputs.version }}" = "latest" ] || [ -z "${{ github.event.inputs.version }}" ]; then
                     echo "🔍 Fetching latest AdGuard VPN CLI release..."
                     RELEASE_DATA=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest)
-                    VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
+                    VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)          # e.g. v1.2.37-release
                   else
-                    VERSION="${{ github.event.inputs.version }}"
+                    VERSION="${{ github.event.inputs.version }}"               # manual tag
                   fi
 
+                  # remove leading 'v'         -> 1.2.37-release
                   VERSION_CLEAN=${VERSION#v}
-                  echo "🏷️ Target version: $VERSION (Clean: $VERSION_CLEAN)"
 
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "version_clean=$VERSION_CLEAN" >> $GITHUB_OUTPUT
+                  # keep numeric part only     -> 1.2.37
+                  VERSION_BASE=${VERSION_CLEAN%%-*}
 
+                  echo "🏷️  Target tag        : $VERSION"
+                  echo "🔢 Clean tag         : $VERSION_CLEAN"
+                  echo "🔑 Numeric-only tag  : $VERSION_BASE"
+
+                  echo "version=$VERSION"        >> $GITHUB_OUTPUT
+                  echo "version_clean=$VERSION_CLEAN"  >> $GITHUB_OUTPUT
+                  echo "version_base=$VERSION_BASE"    >> $GITHUB_OUTPUT
+            # ------------------------------------------------------------
+            # ② Generate build matrix
+            # ------------------------------------------------------------
             - name: 🏗️ Generate build matrix
               id: generate-matrix
               run: |
@@ -94,23 +109,13 @@ jobs:
                   MATRIX=$(cat << 'EOF'
                   {
                     "include": [
-                      {
-                        "arch": "amd64",
-                        "platform": "linux/amd64"
-                      },
-                      {
-                        "arch": "arm64", 
-                        "platform": "linux/arm64"
-                      },
-                      {
-                        "arch": "armv7",
-                        "platform": "linux/arm/v7"
-                      }
+                      { "arch": "amd64", "platform": "linux/amd64" },
+                      { "arch": "arm64", "platform": "linux/arm64" },
+                      { "arch": "armv7", "platform": "linux/arm/v7" }
                     ]
                   }
                   EOF
                   )
-
                   echo "matrix=$(echo "$MATRIX" | jq -c .)" >> $GITHUB_OUTPUT
                   echo "✅ Matrix generated with $(echo "$MATRIX" | jq '.include | length') architectures"
 
@@ -221,7 +226,7 @@ jobs:
                   cache-to: |
                       type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_clean }}
                   build-args: |
-                      AGCLI_VERSION=${{ needs.prepare.outputs.version_clean }}
+                      AGCLI_VERSION=${{ needs.prepare.outputs.version_base  }}
                   tags: |
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
