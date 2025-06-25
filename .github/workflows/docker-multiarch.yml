@@ -434,41 +434,38 @@ jobs:
         permissions:
             contents: write
         steps:
-            - name: 📥 Download digest artifacts
-              uses: actions/download-artifact@v4
-              with:
-                  path: /tmp/digests
-                  pattern: digests-*
-                  merge-multiple: true
+            # 1) Compose release body in Bash
+            - name: 📝 Compose release body
+              id: compose
+              run: |
+                  VERSION='${{ needs.prepare.outputs.version }}'
+                  DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
+                  BODY="# 🚀 AdGuard VPN CLI ${VERSION}\n\n"
+                  BODY+="**Build Date**: ${DATE}  \n"
+                  BODY+="**Architecture Targets**: amd64 · arm64 · armv7  \n"
+                  BODY+="**Registries**: GHCR (\`ghcr.io\`) & Docker Hub\n\n"
+
+                  BODY+="## 📦 Image Digests\n"
+                  BODY+="| Architecture | Digest |\n"
+                  BODY+="|--------------|--------|"
+
+                  for f in /tmp/digests/*/digest.txt; do
+                    arch=$(basename "$(dirname "$f")")
+                    digest=$(cat "$f")
+                    BODY+="\n| ${arch} | \`${digest:0:12}…\` |"
+                  done
+
+                  # multiline-output
+                  printf 'body<<EOF\n%s\nEOF\n' "$BODY" >> "$GITHUB_OUTPUT"
+
+            # 2) Create GitHub Release with that body
             - name: 🏷️ Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.version }}-build-${{ github.run_number }}
                   name: "AdGuard VPN CLI ${{ needs.prepare.outputs.version }} (Build #${{ github.run_number }})"
-                  body: |
-                      # 🚀 AdGuard VPN CLI ${{ needs.prepare.outputs.version }}
-
-                      **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
-                      **Architecture Targets**: amd64 · arm64 · armv7  
-                      **Registries**: GHCR (`ghcr.io`) & Docker Hub
-
-                      ## 📦 Image Digests
-                      | Architecture | Digest |
-                      |--------------|--------|
-                      {% for f in /tmp/digests/*/digest.txt %}
-                      {%   set arch = f | dirname | basename %}
-                      {%   set digest = (f | file_contents).strip() %}
-                      | {{ arch }} | `{{ digest[:12] }}…` |
-                      {% endfor %}
-
-                      ## 🚀 Quick Pull
-                      ```
-                      # auto-detect arch
-                      docker pull ghcr.io/${{ github.repository }}:latest
-                      # or a specific arch tag
-                      docker pull ghcr.io/${{ github.repository }}:latest-arm64
-                      ```
+                  body: ${{ steps.compose.outputs.body }} # ← 실제 본문
                   files: /tmp/digests/*/digest.txt
                   draft: false
                   prerelease: false
