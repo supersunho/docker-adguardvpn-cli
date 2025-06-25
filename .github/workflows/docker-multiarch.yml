@@ -240,17 +240,23 @@ jobs:
                   IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
-                  # Test 1: Binary verification
+                  # Test 1 – Binary presence
                   echo "📋 Test 1: Binary Verification"
-                  docker run --rm --platform ${{ matrix.platform }} "$IMAGE" which adguardvpn-cli && echo " - ✅ AdGuard VPN CLI binary exists" || echo " - ❌ Binary missing"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" which adguardvpn-cli \
+                    && echo " - ✅ AdGuard VPN CLI binary exists" \
+                    || echo " - ❌ Binary missing"
 
-                  # Test 2: Version check
+                  # Test 2 – Version output
                   echo "📋 Test 2: Version Check"
-                  docker run --rm --platform ${{ matrix.platform }} "$IMAGE" adguardvpn-cli --version && echo " - ✅ Version command working" || echo " - ❌ Version command failed"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --version \
+                    && echo " - ✅ Version command working" \
+                    || echo " - ❌ Version command failed"
 
-                  # Test 3: Basic functionality
-                  echo "📋 Test 3: Basic Functionality"
-                  docker run --rm --platform ${{ matrix.platform }} "$IMAGE" adguardvpn-cli --help >/dev/null && echo " - ✅ Help command working" || echo " - ❌ Help command failed"
+                  # Test 3 – Help output
+                  echo "📋 Test 3: Help Command"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --help >/dev/null \
+                    && echo " - ✅ Help command working" \
+                    || echo " - ❌ Help command failed"
 
                   echo "🎉 Verification completed for ${{ matrix.arch }}!"
 
