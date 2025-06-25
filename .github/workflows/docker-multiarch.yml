@@ -333,7 +333,7 @@ jobs:
                     fi
                     
                     echo "🏗️ Creating manifests for $PREFIX..."
-                    ls -al /tmp/digests
+                    
                     # Check which architectures were built
                     ARCH_IMAGES=""
                     for arch in amd64 arm64 armv7; do
