@@ -315,8 +315,8 @@ jobs:
                   for arch in amd64 arm64 armv7; do
                     if [ -d "/tmp/digests/$arch" ]; then
                       echo "✅ $arch directory exists"
-                      if [ -f "/tmp/digests/$arch/digest.txt" ]; then
-                        echo "  📄 digest.txt exists: $(cat /tmp/digests/$arch/digest.txt)"
+                      if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
+                        echo "  📄 digest.txt exists: $(cat /tmp/digests/digests-$arch/digest.txt)"
                       else
                         echo "  ❌ digest.txt missing"
                       fi
@@ -351,11 +351,11 @@ jobs:
                   echo "📦 Creating multi-arch manifests for automatic architecture detection..."
                   echo "🎯 Target version: $VERSION"
 
-                  ls -al /tmp/digests
+
                   # Verify all architecture images exist
                   AVAILABLE_ARCHS=""
                   for arch in amd64 arm64 armv7; do
-                    if [ -f "/tmp/digests/$arch/digest.txt" ]; then
+                    if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
                       AVAILABLE_ARCHS="$AVAILABLE_ARCHS $arch"
                       echo "✅ Confirmed $arch image availability"
                     else
@@ -415,18 +415,18 @@ jobs:
               with:
                   path: /tmp/digests
                   pattern: digests-*
-                  merge-multiple: true
+                  merge-multiple: false
 
             - name: 📊 Generate comprehensive build summary for AdGuard VPN CLI
               run: |
                   # Pre-calculate digest values and status
-                  AMD64_DIGEST=$(cat /tmp/digests/amd64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
-                  ARM64_DIGEST=$(cat /tmp/digests/arm64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
-                  ARMV7_DIGEST=$(cat /tmp/digests/armv7/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
+                  AMD64_DIGEST=$(cat /tmp/digests/digests-amd64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
+                  ARM64_DIGEST=$(cat /tmp/digests/digests-arm64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
+                  ARMV7_DIGEST=$(cat /tmp/digests/digests-armv7/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
 
-                  AMD64_STATUS=$([ -f /tmp/digests/amd64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
-                  ARM64_STATUS=$([ -f /tmp/digests/arm64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
-                  ARMV7_STATUS=$([ -f /tmp/digests/armv7/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
+                  AMD64_STATUS=$([ -f /tmp/digests/digests-amd64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
+                  ARM64_STATUS=$([ -f /tmp/digests/digests-arm64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
+                  ARMV7_STATUS=$([ -f /tmp/digests/digests-armv7/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
 
                   BUILD_COUNT=$(ls /tmp/digests 2>/dev/null | wc -l || echo "0")
                   BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
