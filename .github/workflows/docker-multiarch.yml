@@ -142,10 +142,10 @@ jobs:
                   GHCR_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                     "https://api.github.com/user/packages/container/${{ github.event.repository.name }}/versions" 2>/dev/null || echo '[]')
 
-                  if echo "$GHCR_RESPONSE" | jq -e --arg TAG "$IMAGE_TAG" '.[] | select(.metadata.container.tags[]? == $TAG)' >/dev/null 2>&1; then
+                  if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
                     echo "✅ Image $IMAGE_TAG already exists"
                     echo "build_image=false" >> $GITHUB_OUTPUT
-                  elif [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+                  elif echo "$GHCR_RESPONSE" | jq -e --arg TAG "$IMAGE_TAG" '.[] | select(.metadata.container.tags[]? == $TAG)' >/dev/null 2>&1; then
                     echo "🔄 Force rebuild enabled"
                     echo "build_image=true" >> $GITHUB_OUTPUT
                   else
