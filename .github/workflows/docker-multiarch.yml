@@ -72,24 +72,18 @@ jobs:
             matrix: ${{ steps.generate-matrix.outputs.matrix }}
 
         steps:
-            # ------------------------------------------------------------
-            # ① Detect target tag
-            # ------------------------------------------------------------
             - name: 🔍 Fetch latest AdGuard VPN CLI version
               id: get-version
               run: |
                   if [ "${{ github.event.inputs.version }}" = "latest" ] || [ -z "${{ github.event.inputs.version }}" ]; then
                     echo "🔍 Fetching latest AdGuard VPN CLI release..."
                     RELEASE_DATA=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest)
-                    VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)          # e.g. v1.2.37-release
+                    VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
                   else
-                    VERSION="${{ github.event.inputs.version }}"               # manual tag
+                    VERSION="${{ github.event.inputs.version }}"
                   fi
 
-                  # remove leading 'v'         -> 1.2.37-release
                   VERSION_CLEAN=${VERSION#v}
-
-                  # keep numeric part only     -> 1.2.37
                   VERSION_BASE=${VERSION_CLEAN%%-*}
 
                   echo "🏷️ Target tag        : $VERSION"
@@ -99,9 +93,7 @@ jobs:
                   echo "version=$VERSION"        >> $GITHUB_OUTPUT
                   echo "version_clean=$VERSION_CLEAN"  >> $GITHUB_OUTPUT
                   echo "version_base=$VERSION_BASE"    >> $GITHUB_OUTPUT
-            # ------------------------------------------------------------
-            # ② Generate build matrix
-            # ------------------------------------------------------------
+
             - name: 🏗️ Generate build matrix
               id: generate-matrix
               run: |
@@ -142,11 +134,9 @@ jobs:
             - name: 🔍 Check existing images via registry API
               id: check-images
               run: |
-                  IMAGE_TAG="${{ needs.prepare.outputs.version_clean }}-${{ matrix.arch }}"
+                  IMAGE_TAG="${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}"
                   echo "🔍 Checking if image exists: $IMAGE_TAG"
 
-                  # Check GHCR
-                  TOKEN=$(echo -n "${{ secrets.GITHUB_TOKEN }}" | base64)
                   GHCR_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                     "https://api.github.com/user/packages/container/${{ github.event.repository.name }}/versions" 2>/dev/null || echo '[]')
 
@@ -226,7 +216,7 @@ jobs:
                   cache-to: |
                       type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
                   build-args: |
-                      AGCLI_VERSION=${{ needs.prepare.outputs.version_base  }}
+                      AGCLI_VERSION=${{ needs.prepare.outputs.version_base }}
                   tags: |
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
@@ -240,19 +230,16 @@ jobs:
                   IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
-                  # Test 1 – Binary presence
                   echo "📋 Test 1: Binary Verification"
                   docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" which adguardvpn-cli \
                     && echo " - ✅ AdGuard VPN CLI binary exists" \
                     || echo " - ❌ Binary missing"
 
-                  # Test 2 – Version output
                   echo "📋 Test 2: Version Check"
                   docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --version \
                     && echo " - ✅ Version command working" \
                     || echo " - ❌ Version command failed"
 
-                  # Test 3 – Help output
                   echo "📋 Test 3: Help Command"
                   docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --help >/dev/null \
                     && echo " - ✅ Help command working" \
@@ -330,7 +317,6 @@ jobs:
                     
                     echo "🏗️ Creating manifests for $PREFIX..."
                     
-                    # Check which architectures were built
                     ARCH_IMAGES=""
                     for arch in amd64 arm64 armv7; do
                       if [ -f "/tmp/digests/$arch/digest.txt" ]; then
@@ -340,13 +326,11 @@ jobs:
                     done
                     
                     if [ -n "$ARCH_IMAGES" ]; then
-                      # Create version-specific manifest
                       docker buildx imagetools create \
                         -t ${PREFIX}:$VERSION \
                         $ARCH_IMAGES
                       echo "✅ Created version manifest: ${PREFIX}:$VERSION"
                       
-                      # Create latest manifest
                       docker buildx imagetools create \
                         -t ${PREFIX}:latest \
                         $ARCH_IMAGES
@@ -357,7 +341,7 @@ jobs:
                   done
 
     ##############################################################################
-    # 4) Build summary and release notes
+    # 4) Build summary
     ##############################################################################
     summary:
         needs: [prepare, build]
@@ -397,7 +381,7 @@ jobs:
                   ```
                   # Multi-arch latest
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest
-                  docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}
+                  docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}
 
                   # Architecture-specific
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
@@ -409,27 +393,13 @@ jobs:
                   ```
                   # Multi-arch latest
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}
+                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}
 
                   # Architecture-specific
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-armv7
                   ```
-
-                  ## 🔧 Build Technical Details
-
-                  ### Multi-Architecture Strategy
-                  - **Build System**: Docker Buildx with QEMU emulation
-                  - **Cache Strategy**: GitHub Actions cache with architecture isolation
-                  - **Verification**: Automated testing pipeline per architecture
-                  - **Optimization**: Multi-stage builds with minimal runtime footprint
-
-                  ### Performance Metrics
-                  - **Build Time**: Optimized with advanced caching strategies
-                  - **Image Size**: Minimized through Ubuntu 24.04 LTS base
-                  - **Compatibility**: Native performance across all supported architectures
-                  - **Registry Distribution**: Dual-registry strategy for maximum availability
 
                   ## 🚀 Quick Start Commands
 
@@ -442,31 +412,8 @@ jobs:
                   docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --version
                   ```
 
-                  ### Platform-Specific Usage
-                  ```
-                  # Intel/AMD systems (amd64)
-                  docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-amd64
-
-                  # Apple Silicon / ARM64 systems
-                  docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-arm64
-
-                  # Raspberry Pi / ARMv7 systems
-                  docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-armv7
-                  ```
-
-                  ## 📈 Build Success Summary
-
-                  **✅ Multi-Architecture Support**: Universal compatibility across amd64, arm64, and armv7  
-                  **✅ Dual Registry Publishing**: Available on both Docker Hub and GHCR  
-                  **✅ Automated Verification**: Comprehensive testing and validation pipeline  
-                  **✅ Optimized Performance**: Native architecture builds for maximum efficiency  
-                  **✅ Production Ready**: Enterprise-grade container images with health checks  
-
-                  ---
-
                   **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**  
                   **📊 Total Architectures Built**: $(ls /tmp/digests 2>/dev/null | wc -l || echo "0")  
-                  **🕒 Build Completed**: $(date '+%Y-%m-%d %H:%M:%S UTC')  
 
                   *Generated by [AdGuard VPN CLI Builder](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) • Build #${{ github.run_number }}*
                   EOF
@@ -491,17 +438,7 @@ jobs:
 
                       **Build Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')  
                       **AdGuard VPN CLI Version**: ${{ needs.prepare.outputs.version_base }}  
-                      **Base Architecture**: Multi-platform support (amd64, arm64, armv7)  
-                      **Build Strategy**: Multi-arch with optimized caching and verification  
-                      **Container Registries**: GitHub Container Registry (GHCR) + Docker Hub  
                       **Build Workflow**: #${{ github.run_number }}
-
-                      ## 🏗️ Multi-Architecture Highlights
-
-                      - **Universal Compatibility**: Support for amd64, arm64, and armv7 architectures
-                      - **Dual Registry**: Available on both GHCR and Docker Hub
-                      - **Automated Builds**: Daily builds tracking latest AdGuard VPN CLI releases
-                      - **Verified Images**: Comprehensive testing and verification pipeline
 
                       ## 📦 Available Container Images (Multi-Arch)
 
@@ -511,30 +448,22 @@ jobs:
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest
 
                       # Version-specific multi-arch build
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}
                       ```
 
                       ### 🎯 Architecture-Specific Images
                       ```
                       # AMD64 (x86_64) architecture
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}-amd64
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-amd64
 
                       # ARM64 (aarch64) architecture  
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}-arm64
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-arm64
 
                       # ARMv7 (32-bit ARM) architecture
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_clean }}-armv7
-                      ```
-
-                      ### 🔄 Alternative Registry (GitHub Container Registry)
-                      ```
-                      # GHCR multi-arch images (alternative source)
-                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_clean }}
-                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-$(uname -m)
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-armv7
                       ```
 
                       ## 🚀 Quick Start Guide (Multi-Platform)
@@ -572,75 +501,12 @@ jobs:
                         ${{ env.DOCKERHUB_REPO }}:latest
                       ```
 
-                      ## 🔧 Multi-Architecture Technical Specifications
-
-                      ### Build Environment (Multi-Platform)
-                      - **Base Image**: Ubuntu 24.04 LTS for maximum compatibility
-                      - **Architecture Support**: amd64, arm64, armv7 native compilation
-                      - **Build System**: Docker Buildx with QEMU emulation
-                      - **Cache Strategy**: GitHub Actions cache with architecture isolation
-                      - **Size Optimization**: Multi-stage builds with minimal runtime footprint
-
-                      ### Container Features (Cross-Platform)
-                      - **Native Performance**: Architecture-specific builds for optimal performance
-                      - **Universal Manifests**: Single tag works across all supported architectures
-                      - **Verification Pipeline**: Automated testing on each target platform
-                      - **Health Checks**: Built-in container health monitoring
-
-                      ## 📊 Multi-Architecture Performance Benefits
-
-                      ### Architecture Comparison
-                      | Architecture | Use Case | Performance | Availability |
-                      |--------------|----------|-------------|--------------|
-                      | **amd64** | Desktop/Server | Excellent | High |
-                      | **arm64** | Apple Silicon/ARM servers | Native | High |
-                      | **armv7** | Raspberry Pi/IoT | Good | Medium |
-
-                      ### Deployment Flexibility
-                      - **Cloud Native**: Works on AWS, GCP, Azure across all instance types
-                      - **Edge Computing**: ARM support for edge deployments and IoT devices
-                      - **Development**: Consistent experience across Intel/AMD and Apple Silicon
-                      - **CI/CD**: Single container image works across different runner architectures
-
-                      ## 🛠️ Platform-Specific Usage Examples
-
-                      ### Intel/AMD Systems (amd64)
-                      ```
-                      # Explicitly pull amd64 version
-                      docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
-                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-amd64
-                      ```
-
-                      ### Apple Silicon / ARM64 Systems
-                      ```
-                      # Explicitly pull arm64 version
-                      docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64  
-                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-arm64
-                      ```
-
-                      ### Raspberry Pi / ARMv7 Systems
-                      ```
-                      # Explicitly pull armv7 version
-                      docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7
-                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest-armv7
-                      ```
-
-                      ## 🎯 Why Multi-Architecture Support Matters
-
-                      1. **Universal Compatibility**: Single container image works across all major platforms
-                      2. **Native Performance**: Architecture-specific builds provide optimal performance
-                      3. **Future-Proof**: Support for emerging ARM-based cloud instances and edge devices
-                      4. **Developer Experience**: Consistent behavior across different development machines
-                      5. **Production Flexibility**: Deploy anywhere without architecture constraints
-
                       ---
 
                       **🚀 Ready for universal AdGuard VPN protection?**  
                       **Start with**: `docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest`
 
-                      **📖 Need help?** Check our [Documentation](https://github.com/${{ github.repository }}) or visit [AdGuard VPN](https://adguard-vpn.com/)
-
-                      **⭐ Love the multi-arch support?** Star the repository and share the cross-platform benefits!
+                      **⭐ Love the multi-arch support?** Star the repository and share!
                   files: /tmp/digests/*/digest.txt
                   draft: false
                   prerelease: false
