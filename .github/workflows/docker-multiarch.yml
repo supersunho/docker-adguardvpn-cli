@@ -413,45 +413,73 @@ jobs:
                   | **arm64** | `$(cat /tmp/digests/arm64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")...` | $([ -f /tmp/digests/arm64/digest.txt ] && echo "✅ Success" || echo "❌ Failed") |
                   | **armv7** | `$(cat /tmp/digests/armv7/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")...` | $([ -f /tmp/digests/armv7/digest.txt ] && echo "✅ Success" || echo "❌ Failed") |
 
-                  ### 🐳 Published Container Registries
+                  ### 🐳 Published Container Registries with Auto-Detection
 
-                  #### 🎯 Docker Hub (Primary)
+                  #### 🎯 Docker Hub (Primary) - Smart Architecture Detection
                   ```
-                  # Multi-arch latest
+                  # 🚀 NEW: Automatic architecture detection (Recommended)
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest
                   docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}
+                  # ↑ Automatically selects: amd64 on Intel/AMD, arm64 on Apple Silicon, armv7 on Raspberry Pi
 
-                  # Architecture-specific
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7
+                  # Manual architecture selection (if needed)
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64    # Intel/AMD x86_64
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64    # Apple Silicon/ARM64
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7    # Raspberry Pi/ARMv7
                   ```
 
-                  #### 🔄 GitHub Container Registry (GHCR)
+                  #### 🔄 GitHub Container Registry (GHCR) - Smart Architecture Detection
                   ```
-                  # Multi-arch latest
+                  # 🚀 NEW: Automatic architecture detection
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}
+                  # ↑ Platform-aware: automatically downloads the right architecture
 
-                  # Architecture-specific
+                  # Manual architecture selection (if needed)
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-armv7
                   ```
 
-                  ## 🚀 Quick Start Commands
+                  ## 🚀 Quick Start Commands (Universal Compatibility)
 
-                  ### Automatic Architecture Detection
+                  ### 🎯 Universal Usage (Works on Any Architecture)
                   ```
-                  # Run latest version (auto-detect architecture)
+                  # 🌟 One command works everywhere - Auto-detects your architecture!
                   docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
 
-                  # Check AdGuard VPN CLI version
+                  # Check version (universal command)
                   docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --version
+
+                  # Get help (works on all platforms)
+                  docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --help
                   ```
+
+                  ### 🔍 Architecture Detection Examples
+                  ```
+                  # Same command, different results based on your system:
+
+                  # Intel/AMD (x86_64) systems → pulls amd64 image
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest
+
+                  # Apple Silicon (M1/M2/M3) → pulls arm64 image  
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest
+
+                  # Raspberry Pi (ARM) → pulls armv7 image
+                  docker pull ${{ env.DOCKERHUB_REPO }}:latest
+                  ```
+
+                  ## 🎉 Enhanced Features
+
+                  ✅ **Universal Compatibility**: Single command works across all architectures  
+                  ✅ **Smart Detection**: Automatically selects optimal image for your platform  
+                  ✅ **Flexible Options**: Both auto-detection and manual selection available  
+                  ✅ **Dual Registry**: Available on Docker Hub and GHCR with same features  
+                  ✅ **Future-Proof**: Ready for new architectures and platforms  
 
                   **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**  
                   **📊 Total Architectures Built**: $(ls /tmp/digests 2>/dev/null | wc -l || echo "0")  
+                  **🚀 Auto-Detection**: Enabled for seamless cross-platform usage  
 
                   *Generated by [AdGuard VPN CLI Builder](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) • Build #${{ github.run_number }}*
                   EOF
@@ -470,57 +498,71 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.version }}-build-${{ github.run_number }}
-                  name: "AdGuard VPN CLI Multi-Arch Release ${{ needs.prepare.outputs.version }} (Build #${{ github.run_number }})"
+                  name: "AdGuard VPN CLI Universal Multi-Arch Release ${{ needs.prepare.outputs.version }} (Build #${{ github.run_number }})"
                   body: |
-                      # 🚀 AdGuard VPN CLI Multi-Architecture Container Release ${{ needs.prepare.outputs.version }}
+                      # 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.version }}
 
                       **Build Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')  
                       **AdGuard VPN CLI Version**: ${{ needs.prepare.outputs.version_base }}  
+                      **Universal Compatibility**: ✅ Auto-architecture detection enabled  
                       **Build Workflow**: #${{ github.run_number }}
 
-                      ## 📦 Available Container Images (Multi-Arch)
+                      ## 🌟 NEW: Universal Architecture Detection
 
-                      ### 🎯 Fast Download (Docker Hub - Recommended)
+                      **🎯 One Command, Any Platform**: No need to worry about architecture anymore!
+
                       ```
-                      # Latest multi-arch release (auto-detect architecture)
+                      # This single command works on ANY architecture:
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest
 
-                      # Version-specific multi-arch build
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}
+                      # Automatically selects the right image for:
+                      # -  Intel/AMD (x86_64) → amd64 image
+                      # -  Apple Silicon (M1/M2/M3) → arm64 image  
+                      # -  Raspberry Pi (ARM) → armv7 image
                       ```
 
-                      ### 🎯 Architecture-Specific Images
+                      ## 📦 Universal Container Images
+
+                      ### 🚀 Smart Download (Recommended)
                       ```
-                      # AMD64 (x86_64) architecture
+                      # Universal commands - work on ANY architecture
+                      docker pull ${{ env.DOCKERHUB_REPO }}:latest                    # Auto-detect latest
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}                   # Auto-detect specific version
+                      docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest   # GHCR alternative
+                      ```
+
+                      ### 🎯 Manual Architecture Selection (If Needed)
+                      ```
+                      # Intel/AMD (x86_64) - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
                       docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-amd64
 
-                      # ARM64 (aarch64) architecture  
+                      # Apple Silicon / ARM64 - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64
                       docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-arm64
 
-                      # ARMv7 (32-bit ARM) architecture
+                      # Raspberry Pi / ARMv7 - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7
                       docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-armv7
                       ```
 
-                      ## 🚀 Quick Start Guide (Multi-Platform)
+                      ## 🚀 Universal Quick Start
 
-                      ### Basic AdGuard VPN CLI Usage
+                      ### 🌟 One-Size-Fits-All Commands
                       ```
-                      # Run AdGuard VPN CLI (auto-detect architecture)
+                      # Run on ANY platform (auto-detects architecture)
                       docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
 
-                      # Check AdGuard VPN CLI version
+                      # Check version (universal)
                       docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --version
 
-                      # Get help information
+                      # Get help (works everywhere)
                       docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --help
                       ```
 
-                      ### VPN Connection Setup
+                      ### 🔧 VPN Setup (Platform Agnostic)
                       ```
-                      # Interactive VPN setup
+                      # Interactive VPN setup - works on any architecture
                       docker run -it --rm \
                         --cap-add NET_ADMIN \
                         --device /dev/net/tun \
@@ -528,7 +570,7 @@ jobs:
                         -e ADGUARD_PASSWORD="your_password" \
                         ${{ env.DOCKERHUB_REPO }}:latest
 
-                      # Background VPN with SOCKS5 proxy
+                      # Background VPN with SOCKS5 proxy - universal compatibility
                       docker run -d \
                         --name adguard-vpn \
                         --cap-add NET_ADMIN \
@@ -539,12 +581,41 @@ jobs:
                         ${{ env.DOCKERHUB_REPO }}:latest
                       ```
 
+                      ## 🎯 Platform Examples
+
+                      ### Intel/AMD Desktop/Server
+                      ```
+                      # Same command as always - automatically gets amd64 image
+                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
+                      ```
+
+                      ### Apple Silicon (M1/M2/M3)
+                      ```
+                      # Same command - automatically gets native arm64 performance
+                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
+                      ```
+
+                      ### Raspberry Pi / ARM Devices  
+                      ```
+                      # Same command - automatically gets armv7 compatibility
+                      docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
+                      ```
+
+                      ## ✨ Why Universal Architecture Detection Matters
+
+                      🎯 **Simplicity**: One command works everywhere  
+                      🚀 **Performance**: Always gets the optimal native image  
+                      🔄 **Flexibility**: Still supports manual architecture selection  
+                      🌍 **Universal**: Perfect for mixed-architecture environments  
+                      📱 **Future-Ready**: Automatically supports new platforms  
+
                       ---
 
-                      **🚀 Ready for universal AdGuard VPN protection?**  
-                      **Start with**: `docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest`
+                      **🌟 Ready for universal AdGuard VPN protection on ANY platform?**  
+                      **Just run**: `docker pull ${{ env.DOCKERHUB_REPO }}:latest && docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest`
 
-                      **⭐ Love the multi-arch support?** Star the repository and share!
+                      **🎉 One command, endless possibilities across all architectures!**  
+                      **⭐ Love the universal compatibility?** Star the repository and share the cross-platform magic!
                   files: /tmp/digests/*/digest.txt
                   draft: false
                   prerelease: false
