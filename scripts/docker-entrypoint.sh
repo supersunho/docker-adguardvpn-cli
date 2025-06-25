@@ -4,7 +4,7 @@ export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
 
 # 1. Run init.sh in the foreground (waits until it finishes)
 echo " > Running init.sh..."
-/app/scripts/init.sh
+/opt/adguardvpn_cli/scripts/init.sh
 INIT_EXIT_CODE=$?
 
 # 2. Wait until the log file is created
@@ -19,7 +19,7 @@ TAIL_PID=$!
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = true ]; then
     echo " > Running kill switch..."
     # 4. Run killswitch.sh in the background and save its PID
-    /app/scripts/killswitch.sh >> /root/.local/share/adguardvpn-cli/app.log 2>&1 &
+    /opt/adguardvpn_cli/scripts/killswitch.sh >> /root/.local/share/adguardvpn-cli/app.log 2>&1 &
     KILL_PID=$!
 
     # 5. Wait until killswitch.sh exits
