@@ -303,42 +303,80 @@ jobs:
                   username: ${{ secrets.DOCKERHUB_USERNAME }}
                   password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-            - name: 🏷️ Create multi-arch manifests
+            - name: 🏷️ Create multi-arch manifests with auto-detection
               run: |
                   VERSION="${{ needs.prepare.outputs.version_base }}"
-                  echo "📦 Creating multi-arch manifests for version $VERSION..."
+                  echo "📦 Creating multi-arch manifests for automatic architecture detection..."
 
+                  # Verify all architecture images exist
+                  AVAILABLE_ARCHS=""
+                  for arch in amd64 arm64 armv7; do
+                    if [ -f "/tmp/digests/$arch/digest.txt" ]; then
+                      AVAILABLE_ARCHS="$AVAILABLE_ARCHS $arch"
+                      echo "✅ Confirmed $arch image availability"
+                    else
+                      echo "⚠️ $arch image not found, skipping"
+                    fi
+                  done
+
+                  if [ -z "$AVAILABLE_ARCHS" ]; then
+                    echo "❌ No architecture images found, cannot create manifests"
+                    exit 1
+                  fi
+
+                  echo "🎯 Available architectures:$AVAILABLE_ARCHS"
+
+                  # Create manifests for both registries
                   for registry in ghcr dockerhub; do
                     if [ "$registry" = "ghcr" ]; then
                       PREFIX="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+                      echo "🔵 Processing GHCR: $PREFIX"
                     else
                       PREFIX="${{ env.DOCKERHUB_REPO }}"
+                      echo "🟠 Processing Docker Hub: $PREFIX"
                     fi
                     
-                    echo "🏗️ Creating manifests for $PREFIX..."
-                    
+                    # Build architecture-specific image list
                     ARCH_IMAGES=""
-                    for arch in amd64 arm64 armv7; do
-                      if [ -f "/tmp/digests/$arch/digest.txt" ]; then
-                        ARCH_IMAGES="$ARCH_IMAGES ${PREFIX}:$VERSION-$arch"
-                        echo "✅ Found $arch image"
-                      fi
+                    LATEST_ARCH_IMAGES=""
+                    
+                    for arch in $AVAILABLE_ARCHS; do
+                      ARCH_IMAGES="$ARCH_IMAGES ${PREFIX}:${VERSION}-${arch}"
+                      LATEST_ARCH_IMAGES="$LATEST_ARCH_IMAGES ${PREFIX}:latest-${arch}"
                     done
                     
-                    if [ -n "$ARCH_IMAGES" ]; then
-                      docker buildx imagetools create \
-                        -t ${PREFIX}:$VERSION \
-                        $ARCH_IMAGES
-                      echo "✅ Created version manifest: ${PREFIX}:$VERSION"
-                      
-                      docker buildx imagetools create \
-                        -t ${PREFIX}:latest \
-                        $ARCH_IMAGES
-                      echo "✅ Created latest manifest: ${PREFIX}:latest"
-                    else
-                      echo "❌ No architecture images found for $registry"
-                    fi
+                    echo "📋 Architecture images for version manifest: $ARCH_IMAGES"
+                    echo "📋 Architecture images for latest manifest: $LATEST_ARCH_IMAGES"
+                    
+                    # Create version-specific multi-arch manifest
+                    echo "🏗️ Creating version manifest: ${PREFIX}:${VERSION}"
+                    docker buildx imagetools create \
+                      --tag ${PREFIX}:${VERSION} \
+                      $ARCH_IMAGES
+                    
+                    # Create latest multi-arch manifest  
+                    echo "🏗️ Creating latest manifest: ${PREFIX}:latest"
+                    docker buildx imagetools create \
+                      --tag ${PREFIX}:latest \
+                      $LATEST_ARCH_IMAGES
+                    
+                    echo "✅ Multi-arch manifests created for $registry"
+                    
+                    # Verify manifest creation
+                    echo "🔍 Verifying multi-arch manifest for ${PREFIX}:latest"
+                    docker buildx imagetools inspect ${PREFIX}:latest
                   done
+
+                  echo ""
+                  echo "🎉 Multi-architecture manifest creation completed!"
+                  echo "📖 Users can now run:"
+                  echo "   docker pull ${{ env.DOCKERHUB_REPO }}:latest"
+                  echo "   # This will automatically download the correct architecture"
+                  echo ""
+                  echo "🔍 Architecture detection examples:"
+                  echo "   • On Intel/AMD (x86_64): pulls amd64 image"
+                  echo "   • On Apple Silicon (arm64): pulls arm64 image"  
+                  echo "   • On Raspberry Pi (armv7): pulls armv7 image"
 
     ##############################################################################
     # 4) Build summary
