@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update -qq >/dev/null 2>&1 && \
     echo "📦 Installing development packages..." && \
     apt-get install -qq -y --no-install-recommends  \
-        curl gpg iproute2 sudo tzdata jq \
+        curl gpg iproute2 sudo tzdata jq iputils-ping\
         >/dev/null 2>&1 && \
     echo "✅ Base packages installed successfully" && \
     echo "🔒 Updating CA certificates for maximum compatibility..." && \
