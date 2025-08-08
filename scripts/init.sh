@@ -12,7 +12,13 @@ export ADGUARD_SEND_REPORTS=${ADGUARD_SEND_REPORTS:-false}
 export ADGUARD_SET_SYSTEM_DNS=${ADGUARD_SET_SYSTEM_DNS:-false} 
 export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-false}
 export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
-export ADGUARD_USE_QUIC=${ADGUARD_USE_QUIC:-false}
+
+export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
+export ADGUARD_SHOW_HINTS=${ADGUARD_SHOW_HINTS:-"on"}
+export ADGUARD_DEBUG_LOGGING=${ADGUARD_DEBUG_LOGGING:-"on"}
+export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
+export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
+export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
 
 echo " > Updating Adguard VPN CLI..."
 adguardvpn-cli update
@@ -24,11 +30,15 @@ adguardvpn-cli connect -f -y
 adguardvpn-cli disconnect
 adguardvpn-cli config clear-socks-auth
 
+adguardvpn-cli config set-update-channel "$ADGUARD_UPDATE_CHANNEL"
+adguardvpn-cli config set-show-hints "$ADGUARD_SHOW_HINTS"
+adguardvpn-cli config set-debug-logging "$ADGUARD_DEBUG_LOGGING"
+adguardvpn-cli config set-show-notifications "$ADGUARD_SHOW_NOTIFICATIONS"
+adguardvpn-cli config set-protocol "$ADGUARD_PROTOCOL"
+adguardvpn-cli config set-post-quantum "$ADGUARD_POST_QUANTUM"
+
 if [ "${ADGUARD_USE_CUSTOM_DNS,,}" = true ]; then
     adguardvpn-cli config set-dns "$ADGUARD_CUSTOM_DNS"
-fi
-if [ "${ADGUARD_USE_QUIC,,}" = true ]; then
-    adguardvpn-cli config set-use-quic on
 fi
 
 echo " > Configure Adguard VPN" 

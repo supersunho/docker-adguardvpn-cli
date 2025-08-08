@@ -126,29 +126,32 @@ services:
 
 ## Prerequisites
 
-| Variable                               | Description                        | Default value | Allow values |
-| -------------------------------------- | ---------------------------------- | ------------- | ------------ |
-| ADGUARD_USERNAME                       | Username for login                 | "username"    |              |
-| ADGUARD_PASSWORD                       | Password for login                 | "password"    |              |
-| ADGUARD_CONNECTION_LOCATION            | Defaults to the last used location | "JP"          |              |
-| ADGUARD_CONNECTION_TYPE                | Set VPN operating mode             | "TUN"         | TUN / SOCKS5 |
-| ADGUARD_SOCKS5_USERNAME                | Set the SOCKS username             | "username"    |              |
-| ADGUARD_SOCKS5_PASSWORD                | Set the SOCKS password             | "password"    |              |
-| ADGUARD_SOCKS5_HOST                    | Set the SOCKS listen host.         | "127.0.0.1"   |              |
-| ADGUARD_SOCKS5_PORT                    | Set the SOCKS port                 | 1080          |              |
-| ADGUARD_SEND_REPORTS                   | Send crash reports to developers   | false         | true / false |
-| ADGUARD_SET_SYSTEM_DNS                 | Set the system DNS servers         | false         | true / false |
-| ADGUARD_USE_CUSTOM_DNS                 | Use the custom DNS servers         | true          | true / false |
-| ADGUARD_CUSTOM_DNS                     | Set the DNS upstream server        | "1.1.1.1"     |              |
-| ADGUARD_USE_QUIC                       | Set whether to use QUIC protocol   | true          | true / false |
-| ADGUARD_USE_KILL_SWITCH                | Use the Kill Switch                | true          | true / false |
-| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Check interval for Kill Switch     | 30            |              |
+| Variable                               | Description                                                                                                                                      | Default value | Allow values             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------ |
+| ADGUARD_USERNAME                       | Username for login                                                                                                                               | "username"    |                          |
+| ADGUARD_PASSWORD                       | Password for login                                                                                                                               | "password"    |                          |
+| ADGUARD_CONNECTION_LOCATION            | Defaults to the last used location                                                                                                               | "JP"          |                          |
+| ADGUARD_CONNECTION_TYPE                | Set VPN operating mode                                                                                                                           | "TUN"         | TUN / SOCKS5             |
+| ADGUARD_SOCKS5_USERNAME                | Set the SOCKS username                                                                                                                           | "username"    |                          |
+| ADGUARD_SOCKS5_PASSWORD                | Set the SOCKS password                                                                                                                           | "password"    |                          |
+| ADGUARD_SOCKS5_HOST                    | Set the SOCKS listen host.                                                                                                                       | "127.0.0.1"   |                          |
+| ADGUARD_SOCKS5_PORT                    | Set the SOCKS port                                                                                                                               | 1080          |                          |
+| ADGUARD_SEND_REPORTS                   | Send crash reports to developers                                                                                                                 | false         | true / false             |
+| ADGUARD_SET_SYSTEM_DNS                 | Set the system DNS servers                                                                                                                       | false         | true / false             |
+| ADGUARD_USE_CUSTOM_DNS                 | Use the custom DNS servers                                                                                                                       | true          | true / false             |
+| ADGUARD_CUSTOM_DNS                     | Set the DNS upstream server                                                                                                                      | "1.1.1.1"     |                          |
+| ADGUARD_USE_KILL_SWITCH                | Use the Kill Switch                                                                                                                              | true          | true / false             |
+| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Check interval for Kill Switch                                                                                                                   | 30            |                          |
+| ADGUARD_UPDATE_CHANNEL                 | Set update channel                                                                                                                               | "release"     | release / beta / nightly |
+| ADGUARD_SHOW_HINTS                     | Show hints after command execution                                                                                                               | "on"          | on / off                 |
+| ADGUARD_DEBUG_LOGGING                  | Set debug logging                                                                                                                                | "on"          | on / off                 |
+| ADGUARD_SHOW_NOTIFICATIONS             | Get notified about the status of the VPN connection                                                                                              | "on"          | on / off                 |
+| ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"        | auto / http2 / quic      |
+| ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"         | on / off                 |
 
-> [!IMPORTANT]
-> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 
-> [!IMPORTANT]
-> `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -156,91 +159,91 @@ services:
 
 Please check the location and add the city, country or ISO code to `ADGUARD_CONNECTION_LOCATION`
 
-| ISO | Country        | City             |
-|:----|:--------------|:-----------------|
-| AE  | UAE           | Dubai            |
-| AR  | Argentina     | Buenos Aires     |
-| AT  | Austria       | Vienna           |
-| AU  | Australia     | Sydney           |
-| BE  | Belgium       | Brussels         |
-| BG  | Bulgaria      | Sofia            |
-| BR  | Brazil        | São Paulo        |
-| CA  | Canada        | Vancouver        |
-| CA  | Canada        | Montreal         |
-| CA  | Canada        | Toronto          |
-| CH  | Switzerland   | Zurich           |
-| CL  | Chile         | Santiago         |
-| CN  | China         | Shanghai         |
-| CO  | Colombia      | Bogota           |
-| CY  | Cyprus        | Nicosia          |
-| CZ  | Czechia       | Prague           |
-| DE  | Germany       | Berlin           |
-| DE  | Germany       | Frankfurt        |
-| DK  | Denmark       | Copenhagen       |
-| EE  | Estonia       | Tallinn          |
-| EG  | Egypt         | Cairo            |
-| ES  | Spain         | Barcelona        |
-| ES  | Spain         | Madrid           |
-| FI  | Finland       | Helsinki         |
-| FR  | France        | Paris            |
-| FR  | France        | Marseille        |
-| GB  | United Kingdom| Manchester       |
-| GB  | United Kingdom| London           |
-| GR  | Greece        | Athens           |
-| HK  | Hong Kong     | Hong Kong        |
-| HR  | Croatia       | Zagreb           |
-| HU  | Hungary       | Budapest         |
-| ID  | Indonesia     | Jakarta          |
-| IE  | Ireland       | Dublin           |
-| IL  | Israel        | Tel Aviv         |
-| IN  | India         | Mumbai           |
-| IR  | Iran          | Tehran           |
-| IS  | Iceland       | Reykjavik        |
-| IT  | Italy         | Rome             |
-| IT  | Italy         | Milan            |
-| IT  | Italy         | Palermo          |
-| JP  | Japan         | Tokyo            |
-| KH  | Cambodia      | Phnom Penh       |
-| KR  | South Korea   | Seoul            |
-| KZ  | Kazakhstan    | Astana           |
-| LT  | Lithuania     | Vilnius          |
-| LU  | Luxembourg    | Luxembourg       |
-| LV  | Latvia        | Riga             |
-| MD  | Moldova       | Chișinău         |
-| MX  | Mexico        | Mexico City      |
-| NG  | Nigeria       | Lagos            |
-| NL  | Netherlands   | Amsterdam        |
-| NO  | Norway        | Oslo             |
-| NP  | Nepal         | Kathmandu        |
-| NZ  | New Zealand   | Auckland         |
-| PE  | Peru          | Lima             |
-| PH  | Philippines   | Manila           |
-| PL  | Poland        | Warsaw           |
-| PT  | Portugal      | Lisbon           |
-| RO  | Romania       | Bucharest        |
-| RS  | Serbia        | Belgrade         |
-| RU  | Russia        | Moscow           |
-| SE  | Sweden        | Stockholm        |
-| SG  | Singapore     | Singapore        |
-| SK  | Slovakia      | Bratislava       |
-| TH  | Thailand      | Bangkok          |
-| TR  | Turkey        | Istanbul         |
-| TW  | Taiwan        | Taipei           |
-| UA  | Ukraine       | Kyiv             |
-| US  | United States | Seattle          |
-| US  | United States | Silicon Valley   |
-| US  | United States | Phoenix          |
-| US  | United States | Las Vegas        |
-| US  | United States | Denver           |
-| US  | United States | Dallas           |
-| US  | United States | Los Angeles      |
-| US  | United States | Atlanta          |
-| US  | United States | New York         |
-| US  | United States | Miami            |
-| US  | United States | Boston           |
-| US  | United States | Chicago          |
-| VN  | Vietnam       | Hanoi            |
-| ZA  | South Africa  | Johannesburg     |
+| ISO | Country        | City           |
+| :-- | :------------- | :------------- |
+| AE  | UAE            | Dubai          |
+| AR  | Argentina      | Buenos Aires   |
+| AT  | Austria        | Vienna         |
+| AU  | Australia      | Sydney         |
+| BE  | Belgium        | Brussels       |
+| BG  | Bulgaria       | Sofia          |
+| BR  | Brazil         | São Paulo      |
+| CA  | Canada         | Vancouver      |
+| CA  | Canada         | Montreal       |
+| CA  | Canada         | Toronto        |
+| CH  | Switzerland    | Zurich         |
+| CL  | Chile          | Santiago       |
+| CN  | China          | Shanghai       |
+| CO  | Colombia       | Bogota         |
+| CY  | Cyprus         | Nicosia        |
+| CZ  | Czechia        | Prague         |
+| DE  | Germany        | Berlin         |
+| DE  | Germany        | Frankfurt      |
+| DK  | Denmark        | Copenhagen     |
+| EE  | Estonia        | Tallinn        |
+| EG  | Egypt          | Cairo          |
+| ES  | Spain          | Barcelona      |
+| ES  | Spain          | Madrid         |
+| FI  | Finland        | Helsinki       |
+| FR  | France         | Paris          |
+| FR  | France         | Marseille      |
+| GB  | United Kingdom | Manchester     |
+| GB  | United Kingdom | London         |
+| GR  | Greece         | Athens         |
+| HK  | Hong Kong      | Hong Kong      |
+| HR  | Croatia        | Zagreb         |
+| HU  | Hungary        | Budapest       |
+| ID  | Indonesia      | Jakarta        |
+| IE  | Ireland        | Dublin         |
+| IL  | Israel         | Tel Aviv       |
+| IN  | India          | Mumbai         |
+| IR  | Iran           | Tehran         |
+| IS  | Iceland        | Reykjavik      |
+| IT  | Italy          | Rome           |
+| IT  | Italy          | Milan          |
+| IT  | Italy          | Palermo        |
+| JP  | Japan          | Tokyo          |
+| KH  | Cambodia       | Phnom Penh     |
+| KR  | South Korea    | Seoul          |
+| KZ  | Kazakhstan     | Astana         |
+| LT  | Lithuania      | Vilnius        |
+| LU  | Luxembourg     | Luxembourg     |
+| LV  | Latvia         | Riga           |
+| MD  | Moldova        | Chișinău       |
+| MX  | Mexico         | Mexico City    |
+| NG  | Nigeria        | Lagos          |
+| NL  | Netherlands    | Amsterdam      |
+| NO  | Norway         | Oslo           |
+| NP  | Nepal          | Kathmandu      |
+| NZ  | New Zealand    | Auckland       |
+| PE  | Peru           | Lima           |
+| PH  | Philippines    | Manila         |
+| PL  | Poland         | Warsaw         |
+| PT  | Portugal       | Lisbon         |
+| RO  | Romania        | Bucharest      |
+| RS  | Serbia         | Belgrade       |
+| RU  | Russia         | Moscow         |
+| SE  | Sweden         | Stockholm      |
+| SG  | Singapore      | Singapore      |
+| SK  | Slovakia       | Bratislava     |
+| TH  | Thailand       | Bangkok        |
+| TR  | Turkey         | Istanbul       |
+| TW  | Taiwan         | Taipei         |
+| UA  | Ukraine        | Kyiv           |
+| US  | United States  | Seattle        |
+| US  | United States  | Silicon Valley |
+| US  | United States  | Phoenix        |
+| US  | United States  | Las Vegas      |
+| US  | United States  | Denver         |
+| US  | United States  | Dallas         |
+| US  | United States  | Los Angeles    |
+| US  | United States  | Atlanta        |
+| US  | United States  | New York       |
+| US  | United States  | Miami          |
+| US  | United States  | Boston         |
+| US  | United States  | Chicago        |
+| VN  | Vietnam        | Hanoi          |
+| ZA  | South Africa   | Johannesburg   |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- ACKNOWLEDGMENTS -->
