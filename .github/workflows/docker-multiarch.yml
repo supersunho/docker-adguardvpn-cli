@@ -2,8 +2,8 @@ name: AdGuard VPN CLI Builder
 
 on:
     # Daily automatic builds
-    schedule:
-        - cron: "0 3 * * *"
+    # schedule:
+    #     - cron: "0 3 * * *"
 
     # Manual trigger with options
     workflow_dispatch:
