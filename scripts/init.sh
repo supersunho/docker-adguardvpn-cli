@@ -1,5 +1,8 @@
 #!/bin/bash 
 
+# Import utility functions
+source /opt/adguardvpn_cli/scripts/utils.sh
+
 export ADGUARD_USERNAME=${ADGUARD_USERNAME:-"username"} 
 export ADGUARD_PASSWORD=${ADGUARD_PASSWORD:-"password"} 
 export ADGUARD_CONNECTION_LOCATION=${ADGUARD_CONNECTION_LOCATION:-"JP"} 
@@ -20,10 +23,10 @@ export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
 export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
 export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
 
-echo " > Updating Adguard VPN CLI..."
+log "Updating Adguard VPN CLI..."
 adguardvpn-cli update
 
-echo " > Login Adguard VPN and test connection..."
+log "Login Adguard VPN and test connection..."
 adguardvpn-cli login -u "$ADGUARD_USERNAME" -p "$ADGUARD_PASSWORD"
 adguardvpn-cli config set-mode "$ADGUARD_CONNECTION_TYPE" 
 adguardvpn-cli connect -f -y
@@ -41,26 +44,26 @@ if [ "${ADGUARD_USE_CUSTOM_DNS,,}" = true ]; then
     adguardvpn-cli config set-dns "$ADGUARD_CUSTOM_DNS"
 fi
 
-echo " > Configure Adguard VPN" 
+log "Configure Adguard VPN" 
 if [ "${ADGUARD_SET_SYSTEM_DNS,,}" = false ]; then 
-    echo " > adguardvpn-cli config set-change-system-dns  off"
+    log "adguardvpn-cli config set-change-system-dns  off"
     adguardvpn-cli config set-change-system-dns off
 fi
 
 if [ "${ADGUARD_SEND_REPORTS,,}" = false ]; then 
-    echo " > adguardvpn-cli config set-crash-reporting off"
+    log "adguardvpn-cli config set-crash-reporting off"
     adguardvpn-cli config set-crash-reporting off
 fi
 
-echo " > Running Adguard VPN" 
-echo " > adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
+log "Running Adguard VPN" 
+log "adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "SOCKS" ]; then
     adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
     adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
 fi
 adguardvpn-cli connect -l "$ADGUARD_CONNECTION_LOCATION"
 
-echo " > Adguard VPN Status"
+log "Adguard VPN Status"
 
 adguardvpn-cli status
 
