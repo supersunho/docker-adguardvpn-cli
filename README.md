@@ -148,6 +148,8 @@ services:
 | ADGUARD_SHOW_NOTIFICATIONS             | Get notified about the status of the VPN connection                                                                                              | "on"          | on / off                 |
 | ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"        | auto / http2 / quic      |
 | ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"         | on / off                 |
+| ✨ADGUARD_ALLOW_VPN_IP_CHANGE | Allow VPN server changes/reconnections | true | true / false |
+| ✨ADGUARD_MAX_IP_CHANGES | Max IP changes before termination (≤0 = unlimited) | 5 | -1(unlimited) or number |
 
 > [!IMPORTANT]
 > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
