@@ -19,10 +19,16 @@ on:
                     - "ubuntu-22.04-arm"
                     - "ubuntu-latest"
 
-            version:
-                description: "AdGuard VPN CLI version (e.g., v1.2.3, latest for newest)"
+            source_version:
+                description: "AdGuard VPN CLI source version (e.g., v1.2.3, latest for newest)"
                 required: false
                 default: "latest"
+                type: string
+
+            build_version:
+                description: "Custom build version tag (optional - will use source version if empty)"
+                required: false
+                default: ""
                 type: string
 
             verify_build:
@@ -45,7 +51,7 @@ on:
 
 # Optimized concurrency management
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event.inputs.version || 'latest' }}
+    group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event.inputs.build_version || github.event.inputs.source_version || 'latest' }}
     cancel-in-progress: true
 
 # Enhanced global environment variables
@@ -68,33 +74,76 @@ jobs:
     prepare:
         runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
         outputs:
-            version: ${{ steps.get-version.outputs.version }}
-            version_clean: ${{ steps.get-version.outputs.version_clean }}
-            version_base: ${{ steps.get-version.outputs.version_base }}
+            source_version: ${{ steps.get-version.outputs.source_version }}
+            source_version_clean: ${{ steps.get-version.outputs.source_version_clean }}
+            source_version_base: ${{ steps.get-version.outputs.source_version_base }}
+            build_version: ${{ steps.get-version.outputs.build_version }}
+            build_version_clean: ${{ steps.get-version.outputs.build_version_clean }}
+            build_version_base: ${{ steps.get-version.outputs.build_version_base }}
             matrix: ${{ steps.generate-matrix.outputs.matrix }}
 
         steps:
-            - name: 🔍 Fetch latest AdGuard VPN CLI version
+            - name: 🔍 Determine source and build versions
               id: get-version
               run: |
-                  if [ "${{ github.event.inputs.version }}" = "latest" ] || [ -z "${{ github.event.inputs.version }}" ]; then
-                    echo "🔍 Fetching latest AdGuard VPN CLI release..."
+                  # =================================================================
+                  # Step 1: Get AdGuard VPN CLI source version
+                  # =================================================================
+                  
+                  if [ "${{ github.event.inputs.source_version }}" = "latest" ] || [ -z "${{ github.event.inputs.source_version }}" ]; then
+                    echo "🔍 Fetching latest AdGuard VPN CLI release from upstream..."
                     RELEASE_DATA=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest)
-                    VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
+                    SOURCE_VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
+                    echo "📦 Latest upstream version: $SOURCE_VERSION"
                   else
-                    VERSION="${{ github.event.inputs.version }}"
+                    SOURCE_VERSION="${{ github.event.inputs.source_version }}"
+                    echo "📌 Using specified source version: $SOURCE_VERSION"
                   fi
 
-                  VERSION_CLEAN=${VERSION#v}
-                  VERSION_BASE=${VERSION_CLEAN%%-*}
+                  # =================================================================
+                  # Step 2: Determine build version (custom or fallback to source)
+                  # =================================================================
+                  
+                  if [ -n "${{ github.event.inputs.build_version }}" ]; then
+                    BUILD_VERSION="${{ github.event.inputs.build_version }}"
+                    echo "🏷️ Using custom build version: $BUILD_VERSION"
+                  else
+                    BUILD_VERSION="$SOURCE_VERSION"
+                    echo "🏷️ Using source version as build version: $BUILD_VERSION"
+                  fi
 
-                  echo "🏷️ Target tag        : $VERSION"
-                  echo "🔢 Clean tag         : $VERSION_CLEAN"
-                  echo "🔑 Numeric-only tag  : $VERSION_BASE"
+                  # =================================================================
+                  # Step 3: Process version strings for Docker tags
+                  # =================================================================
+                  
+                  # Clean versions (remove 'v' prefix if present)
+                  SOURCE_VERSION_CLEAN=${SOURCE_VERSION#v}
+                  BUILD_VERSION_CLEAN=${BUILD_VERSION#v}
+                  
+                  # Base versions (remove suffix like '-beta', '-rc1' etc)
+                  SOURCE_VERSION_BASE=${SOURCE_VERSION_CLEAN%%-*}
+                  BUILD_VERSION_BASE=${BUILD_VERSION_CLEAN%%-*}
 
-                  echo "version=$VERSION"        >> $GITHUB_OUTPUT
-                  echo "version_clean=$VERSION_CLEAN"  >> $GITHUB_OUTPUT
-                  echo "version_base=$VERSION_BASE"    >> $GITHUB_OUTPUT
+                  # =================================================================
+                  # Step 4: Output summary and export variables
+                  # =================================================================
+                  
+                  echo ""
+                  echo "📋 Version Summary:"
+                  echo "├─ 🎯 AdGuard CLI Source    : $SOURCE_VERSION ($SOURCE_VERSION_CLEAN)"
+                  echo "├─ 🏷️ Build/Release Tag     : $BUILD_VERSION ($BUILD_VERSION_CLEAN)"
+                  echo "├─ 🔧 Source Base Version   : $SOURCE_VERSION_BASE"
+                  echo "└─ 🚀 Build Base Version    : $BUILD_VERSION_BASE"
+                  echo ""
+
+                  # Export all versions for use in subsequent jobs
+                  echo "source_version=$SOURCE_VERSION" >> $GITHUB_OUTPUT
+                  echo "source_version_clean=$SOURCE_VERSION_CLEAN" >> $GITHUB_OUTPUT
+                  echo "source_version_base=$SOURCE_VERSION_BASE" >> $GITHUB_OUTPUT
+                  
+                  echo "build_version=$BUILD_VERSION" >> $GITHUB_OUTPUT
+                  echo "build_version_clean=$BUILD_VERSION_CLEAN" >> $GITHUB_OUTPUT
+                  echo "build_version_base=$BUILD_VERSION_BASE" >> $GITHUB_OUTPUT
 
             - name: 🏗️ Generate build matrix
               id: generate-matrix
@@ -129,14 +178,15 @@ jobs:
             - name: 🎯 Display build target information
               run: |
                   echo "🎯 Building AdGuard VPN CLI container for: ${{ matrix.platform }}"
-                  echo "🏷️ Version: ${{ needs.prepare.outputs.version_clean }}"
+                  echo "📦 AdGuard CLI Source: ${{ needs.prepare.outputs.source_version_base }}"
+                  echo "🏷️ Build Tag: ${{ needs.prepare.outputs.build_version_base }}"
                   echo "🏗️ Architecture: ${{ matrix.arch }}"
                   echo "📦 Platform: ${{ matrix.platform }}"
 
             - name: 🔍 Check existing images via registry API
               id: check-images
               run: |
-                  IMAGE_TAG="${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}"
+                  IMAGE_TAG="${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
                   echo "🔍 Checking if image exists: $IMAGE_TAG"
 
                   # Always build on workflow_dispatch with force_rebuild
@@ -215,7 +265,7 @@ jobs:
                   path: |
                       /tmp/apt-cache
                       /tmp/apt-lib
-                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
+                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
                   restore-keys: |
                       ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-
 
@@ -229,22 +279,22 @@ jobs:
                   push: true
                   no-cache: ${{ github.event.inputs.clear_cache == 'true' }}
                   cache-from: |
-                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
+                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
                   cache-to: |
-                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.version_base }}
+                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
                   build-args: |
-                      AGCLI_VERSION=${{ needs.prepare.outputs.version_base }}
+                      AGCLI_VERSION=${{ needs.prepare.outputs.source_version_base }}
                   tags: |
-                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}
+                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
-                      ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}
+                      ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}
                       ${{ env.DOCKERHUB_REPO }}:latest-${{ matrix.arch }}
                   provenance: false
 
             - name: 🧪 Comprehensive container verification
               if: steps.check-images.outputs.build_image == 'true' && github.event.inputs.verify_build == 'true'
               run: |
-                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}-${{ matrix.arch }}"
+                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
                   echo "📋 Test 1: Binary Verification"
@@ -347,10 +397,9 @@ jobs:
 
             - name: 🏷️ Create multi-arch manifests with auto-detection
               run: |
-                  VERSION="${{ needs.prepare.outputs.version_base }}"
+                  VERSION="${{ needs.prepare.outputs.build_version_base }}"
                   echo "📦 Creating multi-arch manifests for automatic architecture detection..."
                   echo "🎯 Target version: $VERSION"
-
 
                   # Verify all architecture images exist
                   AVAILABLE_ARCHS=""
@@ -436,8 +485,9 @@ jobs:
                   # 🚀 AdGuard VPN CLI Multi-Architecture Build Summary
 
                   **Build Date**: $BUILD_DATE  
-                  **AdGuard VPN CLI Version**: ${{ needs.prepare.outputs.version_base }}  
-                  **Release Tag**: ${{ needs.prepare.outputs.version }}  
+                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}  
+                  **Build/Release Tag**: ${{ needs.prepare.outputs.build_version_base }}  
+                  **Source Release Tag**: ${{ needs.prepare.outputs.source_version }}  
                   **Build Number**: #${{ github.run_number }}  
                   **Repository**: [${{ github.repository }}](https://github.com/${{ github.repository }})  
                   **Workflow Run**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
@@ -457,7 +507,7 @@ jobs:
                   \`\`\`
                   # 🚀 NEW: Automatic architecture detection (Recommended)
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest
-                  docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}
+                  docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}
                   # ↑ Automatically selects: amd64 on Intel/AMD, arm64 on Apple Silicon, armv7 on Raspberry Pi
 
                   # Manual architecture selection (if needed)
@@ -470,7 +520,7 @@ jobs:
                   \`\`\`
                   # 🚀 NEW: Automatic architecture detection
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.version_base }}
+                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}
                   # ↑ Platform-aware: automatically downloads the right architecture
 
                   # Manual architecture selection (if needed)
@@ -500,6 +550,7 @@ jobs:
                   ✅ **Flexible Options**: Both auto-detection and manual selection available  
                   ✅ **Dual Registry**: Available on Docker Hub and GHCR with same features  
                   ✅ **Future-Proof**: Ready for new architectures and platforms  
+                  ✅ **Version Control**: Separate source and build version management  
 
                   **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**  
                   **📊 Total Architectures Built**: $BUILD_COUNT  
@@ -521,13 +572,14 @@ jobs:
             - name: 🏷️ Create comprehensive GitHub Release for AdGuard VPN CLI
               uses: softprops/action-gh-release@v2
               with:
-                  tag_name: ${{ needs.prepare.outputs.version }}-build-${{ github.run_number }}
-                  name: "AdGuard VPN CLI Universal Multi-Arch Release ${{ needs.prepare.outputs.version }} (Build #${{ github.run_number }})"
+                  tag_name: ${{ needs.prepare.outputs.build_version }}-build-${{ github.run_number }}
+                  name: "AdGuard VPN CLI Universal Multi-Arch Release ${{ needs.prepare.outputs.build_version }} (Build #${{ github.run_number }})"
                   body: |
-                      # 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.version }}
+                      # 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.build_version }}
 
                       **Build Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')  
-                      **AdGuard VPN CLI Version**: ${{ needs.prepare.outputs.version_base }}  
+                      **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}  
+                      **Build/Release Version**: ${{ needs.prepare.outputs.build_version_base }}  
                       **Universal Compatibility**: ✅ Auto-architecture detection enabled  
                       **Build Workflow**: #${{ github.run_number }}
 
@@ -551,7 +603,7 @@ jobs:
                       ```
                       # Universal commands - work on ANY architecture
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest                    # Auto-detect latest
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}                   # Auto-detect specific version
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}                   # Auto-detect specific version
                       docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest   # GHCR alternative
                       ```
 
@@ -559,15 +611,15 @@ jobs:
                       ```
                       # Intel/AMD (x86_64) - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-amd64
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}-amd64
 
                       # Apple Silicon / ARM64 - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-arm64
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}-arm64
 
                       # Raspberry Pi / ARMv7 - Explicit selection
                       docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7
-                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.version_base }}-armv7
+                      docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}-armv7
                       ```
 
                       ## 🚀 Universal Quick Start
@@ -632,6 +684,7 @@ jobs:
                       🔄 **Flexibility**: Still supports manual architecture selection  
                       🌍 **Universal**: Perfect for mixed-architecture environments  
                       📱 **Future-Ready**: Automatically supports new platforms  
+                      🏷️ **Version Control**: Independent source and build versioning  
 
                       ---
 
