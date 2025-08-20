@@ -23,8 +23,8 @@ export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
 export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
 export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
 
-log "Updating Adguard VPN CLI..."
-adguardvpn-cli update
+# log "Updating Adguard VPN CLI..."
+# adguardvpn-cli update -y
 
 log "Login Adguard VPN and test connection..."
 adguardvpn-cli login -u "$ADGUARD_USERNAME" -p "$ADGUARD_PASSWORD"
