@@ -63,6 +63,7 @@ TAIL_PID=$!
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log "🛡️ Activating Kill Switch..."
+    sleep 5;
     
     # Validate IP detection
     if [ "$REAL_IP" = "ERROR" ]; then
