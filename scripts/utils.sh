@@ -8,13 +8,15 @@
 # - check_adguard_vpn_status(): Checks AdGuard VPN connection status
 # =============================================================================
 log() { echo -e "[$(basename "${BASH_SOURCE[1]}" .sh)] $1"; }
+
 # =============================================================================
-# Public IP Detection Function
+# Public IP Detection Function with Persistent Method Storage
 # =============================================================================
 get_public_ip() {
     local ip=""
+    local IP_METHOD_FILE="/tmp/adguard_ip_method.txt"
     
-    # DNS methods (fastest)
+    # DNS and HTTP method arrays (same as before)
     local dns_methods=(
         "OpenDNS|dig +short myip.opendns.com @resolver1.opendns.com"
         "Google DNS|dig TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'\"' '{print \$2}'"
@@ -22,7 +24,6 @@ get_public_ip() {
         "Cloudflare 1.1.1.1|dig +short txt ch whoami.cloudflare @1.1.1.1 | tr -d '\"'"
     )
     
-    # HTTP services (backup)
     local http_services=(
         "AWS|https://checkip.amazonaws.com"
         "IPify|https://api.ipify.org"
@@ -35,7 +36,34 @@ get_public_ip() {
         "ifconfig.me|https://ifconfig.me/ip"
     )
     
-    # Shuffle array function
+    # =========================================================================
+    # Try Previously Successful Method First (from file)
+    # =========================================================================
+    if [ -f "$IP_METHOD_FILE" ]; then
+        local saved_method=$(cat "$IP_METHOD_FILE" 2>/dev/null)
+        
+        if [ -n "$saved_method" ]; then
+            IFS='|' read -r type name command <<< "$saved_method"
+            log "🔄 Reusing saved method: $name" >&2
+            
+            # Try the previously successful method
+            ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
+            
+            if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                log "✅ Consistent method: $name -> $ip" >&2
+                echo "$ip"
+                return 0
+            else
+                log "⚠️ Saved method failed, removing and trying alternatives..." >&2
+                # Remove failed method file
+                rm -f "$IP_METHOD_FILE"
+            fi
+        fi
+    fi
+    
+    # =========================================================================
+    # Original Discovery Logic (when no successful method saved)
+    # =========================================================================
     shuffle_array() {
         local -n arr=$1
         local i tmp size rand
@@ -48,7 +76,7 @@ get_public_ip() {
     
     # Try DNS methods first
     if command -v dig >/dev/null 2>&1; then
-        log "📡 Trying DNS methods..." >&2
+        log "📡 Discovering reliable DNS method..." >&2
         shuffle_array dns_methods
         
         for method in "${dns_methods[@]}"; do
@@ -58,7 +86,9 @@ get_public_ip() {
             ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
             
             if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                log "✅ $name: $ip" >&2
+                # Save successful method to file
+                echo "dns|$name|$command" > "$IP_METHOD_FILE"
+                log "✅ $name: $ip (saved for future use)" >&2
                 echo "$ip"
                 return 0
             else
@@ -72,7 +102,7 @@ get_public_ip() {
     fi
     
     # Try HTTP services
-    log "🌐 Trying HTTP services..." >&2
+    log "🌐 Discovering reliable HTTP service..." >&2
     shuffle_array http_services
     
     for service in "${http_services[@]}"; do
@@ -81,8 +111,10 @@ get_public_ip() {
         
         ip=$(curl -4 -s --connect-timeout 5 --max-time 10 "$url" 2>/dev/null | head -n1 | tr -d '\n\r ')
         
-        if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            log "✅ $name: $ip" >&2
+        if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # Save successful method to file
+            echo "http|$name|curl -4 -s --connect-timeout 5 --max-time 10 $url" > "$IP_METHOD_FILE"
+            log "✅ $name: $ip (saved for future use)" >&2
             echo "$ip"
             return 0
         else
