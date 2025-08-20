@@ -3,21 +3,6 @@
 # =============================================================================
 # AdGuard VPN Kill Switch Script
 # =============================================================================
-# This script monitors the AdGuard VPN connection and automatically terminates
-# the container if the VPN connection is lost or the IP address changes unexpectedly.
-# It ensures that no traffic can leak through the original network connection
-# if the VPN becomes unavailable.
-#
-# Requirements:
-# - adguardvpn-cli must be installed and available
-# - utils.sh must contain get_public_ip() and check_adguard_vpn_status() functions
-# - Real IP address before VPN connection must be provided as parameter
-#
-# Usage:
-#   ./killswitch.sh <real_ip_before_vpn>
-#   or
-#   REAL_IP_BEFORE_VPN=<ip> ./killswitch.sh
-# =============================================================================
 
 # Source utility functions for IP detection and VPN status checking
 source /opt/adguardvpn_cli/scripts/utils.sh
@@ -26,174 +11,143 @@ source /opt/adguardvpn_cli/scripts/utils.sh
 # Input Parameter Validation
 # =============================================================================
 
-# Accept real IP either as command line parameter or environment variable
-# This IP represents the user's actual IP address before VPN connection
 REAL_IP_BEFORE_VPN=${1:-$REAL_IP_BEFORE_VPN}
 
-# Validate that real IP was provided - this is critical for proper operation
 if [ -z "$REAL_IP_BEFORE_VPN" ]; then
-    echo " > [Kill Switch] ERROR: Real IP before VPN not provided!"
-    echo " > [Kill Switch] Usage: $0 <real_ip_before_vpn>"
-    echo " > [Kill Switch] This IP should be obtained before connecting to VPN"
+    log "🚨 Kill Switch ERROR: Real IP not provided!"
+    log " > Usage: $0 <real_ip_before_vpn>"
     exit 1
 fi
 
-echo " > [Kill Switch] Real IP before VPN: $REAL_IP_BEFORE_VPN"
+log "🏠 Original IP: $REAL_IP_BEFORE_VPN"
 
 # =============================================================================
-# Configuration and Environment Setup
+# Configuration Setup
 # =============================================================================
 
-# Set monitoring interval (default: 30 seconds)
-# This can be overridden by setting ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
 export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-30}
+export ADGUARD_ALLOW_VPN_IP_CHANGE=${ADGUARD_ALLOW_VPN_IP_CHANGE:-true}
+export ADGUARD_MAX_IP_CHANGES=${ADGUARD_MAX_IP_CHANGES:-5}
 
-echo " > [Kill Switch] Monitoring interval set to: ${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL} seconds"
+# 무제한 설정 표시
+if [ "$ADGUARD_MAX_IP_CHANGES" -le 0 ]; then
+    log "⚙️ Config: Check ${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL}s, IP Changes ${ADGUARD_ALLOW_VPN_IP_CHANGE} (unlimited)"
+else
+    log "⚙️ Config: Check ${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL}s, IP Changes ${ADGUARD_ALLOW_VPN_IP_CHANGE} (max:${ADGUARD_MAX_IP_CHANGES})"
+fi
 
 # =============================================================================
-# Initial VPN Connection Verification
+# Initial VPN Verification
 # =============================================================================
 
-echo " > [Kill Switch] Verifying VPN connection status..."
+log "🔍 Checking VPN connection..."
 
-# Check if AdGuard VPN is properly connected using CLI status command
-# This function should detect both TUN and SOCKS mode connections
 if ! check_adguard_vpn_status; then
-    echo " > [Kill Switch] ERROR: AdGuard VPN is not connected!"
-    echo " > [Kill Switch] Please ensure VPN is connected before running this script"
+    log "🚨 VPN not connected!"
     exit 1
 fi
 
-echo " > [Kill Switch] ✓ AdGuard VPN connection confirmed"
+log "✅ VPN connected"
 
 # =============================================================================
-# VPN IP Address Detection and Validation
+# Initial IP Detection
 # =============================================================================
 
-# Get current public IP address (should be VPN IP if connection is working)
-echo " > [Kill Switch] Detecting current public IP address..."
+log "📡 Getting current IP..."
 CURRENT_IP=$(get_public_ip)
 
-# Handle IP detection failure
 if [ "$CURRENT_IP" = "ERROR" ]; then
-    echo " > [Kill Switch] CRITICAL: Failed to detect current IP address"
-    echo " > [Kill Switch] This could indicate network connectivity issues"
+    log "🚨 Failed to get IP address"
     exit 1
 fi
 
-echo " > [Kill Switch] Current IP detected: $CURRENT_IP"
-
-# =============================================================================
-# VPN Effectiveness Verification
-# =============================================================================
-
-# Verify that VPN is actually working by comparing current IP with real IP
-# If they match, VPN is not routing traffic properly
 if [ "$CURRENT_IP" = "$REAL_IP_BEFORE_VPN" ]; then
-    echo " > [Kill Switch] WARNING: Current IP ($CURRENT_IP) matches real IP!"
-    echo " > [Kill Switch] This indicates VPN may not be routing traffic correctly"
-    echo " > [Kill Switch] Possible causes:"
-    echo " > [Kill Switch] - VPN connection established but routing failed"
-    echo " > [Kill Switch] - DNS leakage"
-    echo " > [Kill Switch] - Split tunneling enabled"
-    echo " > [Kill Switch] TERMINATING for security reasons"
+    log "🚨 VPN not working! Current IP matches original IP"
     exit 1
 fi
 
-# Store VPN IP for continuous monitoring
 VPN_IP="$CURRENT_IP"
-echo " > [Kill Switch] ✓ VPN is working correctly"
-echo " > [Kill Switch] VPN IP confirmed: $VPN_IP"
-echo " > [Kill Switch] Starting continuous monitoring..."
+VPN_IP_CHANGE_COUNT=0
+
+log "🌐 VPN IP: $VPN_IP"
+log "🛡️ Kill Switch monitoring started"
 
 # =============================================================================
-# Continuous Monitoring Loop
+# Enhanced Monitoring Loop with Unlimited IP Changes Support
 # =============================================================================
-
-# This loop continuously monitors VPN status and IP address
-# Any deviation from expected state will trigger container termination
-echo " > [Kill Switch] Monitoring started (Real IP: $REAL_IP_BEFORE_VPN, VPN IP: $VPN_IP)"
 
 while true; do
-    # Wait for specified interval before next check
     sleep $ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
     
-    echo " > [Kill Switch] Performing routine VPN health check..."
+    log "💓 Health check..."
     
-    # =========================================================================
-    # VPN Service Status Check
-    # =========================================================================
-    
-    # Check if AdGuard VPN service is still running and connected
+    # Check VPN service
     if ! check_adguard_vpn_status; then
-        echo " > [Kill Switch] ALERT: AdGuard VPN service disconnected!"
-        echo " > [Kill Switch] VPN service is no longer running or connected"
-        echo " > [Kill Switch] TERMINATING container to prevent traffic leakage"
+        log "🚨 VPN service disconnected! Terminating..."
         exit 1
     fi
     
-    # =========================================================================
-    # IP Address Monitoring
-    # =========================================================================
-    
-    # Get current public IP for comparison
-    CURRENT_IP=$(get_public_ip)
-    
-    # Handle temporary IP detection failures (retry logic)
-    if [ "$CURRENT_IP" = "ERROR" ]; then
-        echo " > [Kill Switch] WARNING: Failed to get current IP address"
-        echo " > [Kill Switch] This might be a temporary network issue"
-        echo " > [Kill Switch] Retrying in 10 seconds..."
+    # Get current IP with retry
+    RETRY_COUNT=0
+    while [ "$RETRY_COUNT" -lt 3 ]; do
+        CURRENT_IP=$(get_public_ip)
+        [ "$CURRENT_IP" != "ERROR" ] && break
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        log "⚠️ IP detection failed (retry $RETRY_COUNT/3)"
         sleep 10
-        continue
-    fi
+    done
     
-    # Log current monitoring status
-    echo " > [Kill Switch] Status check: VPN IP: $VPN_IP => Current IP: $CURRENT_IP"
-    
-    # =========================================================================
-    # VPN IP Change Detection
-    # =========================================================================
-    
-    # Detect if VPN IP has changed (could indicate VPN server switch or connection reset)
-    if [ "$CURRENT_IP" != "$VPN_IP" ]; then
-        echo " > [Kill Switch] ALERT: VPN IP address has changed!"
-        echo " > [Kill Switch] Expected: $VPN_IP"
-        echo " > [Kill Switch] Current:  $CURRENT_IP"
-        echo " > [Kill Switch] Possible causes:"
-        echo " > [Kill Switch] - VPN server reconnection"
-        echo " > [Kill Switch] - VPN service restart" 
-        echo " > [Kill Switch] - Network configuration change"
-        echo " > [Kill Switch] TERMINATING container for security"
+    if [ "$CURRENT_IP" = "ERROR" ]; then
+        log "🚨 All IP detection failed! Terminating..."
         exit 1
     fi
     
-    # =========================================================================
-    # Traffic Leak Detection
-    # =========================================================================
-    
-    # Check if traffic has reverted to real IP (VPN bypass/failure)
+    # Critical: Check traffic leak
     if [ "$CURRENT_IP" = "$REAL_IP_BEFORE_VPN" ]; then
-        echo " > [Kill Switch] CRITICAL: IP reverted to real IP address!"
-        echo " > [Kill Switch] Current IP: $CURRENT_IP"
-        echo " > [Kill Switch] Real IP:   $REAL_IP_BEFORE_VPN"
-        echo " > [Kill Switch] This indicates VPN connection has failed"
-        echo " > [Kill Switch] Traffic is now flowing through original connection"
-        echo " > [Kill Switch] TERMINATING container immediately"
+        log "🚨 TRAFFIC LEAK DETECTED! IP: $CURRENT_IP"
+        log "🛑 IMMEDIATE TERMINATION"
         exit 1
     fi
     
-    # =========================================================================
-    # Health Check Confirmation
-    # =========================================================================
+    # Handle VPN IP change with unlimited support
+    if [ "$CURRENT_IP" != "$VPN_IP" ]; then
+        log "🔄 VPN IP changed: $VPN_IP → $CURRENT_IP"
+        
+        if [ "${ADGUARD_ALLOW_VPN_IP_CHANGE,,}" != "true" ]; then
+            log "🚨 IP changes disabled! Terminating..."
+            exit 1
+        fi
+        
+        VPN_IP_CHANGE_COUNT=$((VPN_IP_CHANGE_COUNT + 1))
+
+        if [ "$ADGUARD_MAX_IP_CHANGES" -le 0 ]; then 
+            log "🔄 IP changes: $VPN_IP_CHANGE_COUNT (unlimited)"
+        else
+            if [ "$VPN_IP_CHANGE_COUNT" -gt "$ADGUARD_MAX_IP_CHANGES" ]; then
+                log "🚨 Too many IP changes ($VPN_IP_CHANGE_COUNT)! Connection unstable"
+                exit 1
+            fi
+            log "🔄 IP changes: $VPN_IP_CHANGE_COUNT/$ADGUARD_MAX_IP_CHANGES"
+        fi
+        
+        if ! check_adguard_vpn_status; then
+            log "🚨 VPN disconnected during IP change!"
+            exit 1
+        fi
+        
+        VPN_IP="$CURRENT_IP"
+        log "✅ New VPN IP accepted: $VPN_IP"
+    fi
     
-    # Log successful monitoring cycle
-    echo " > [Kill Switch] ✓ All checks passed - VPN connection stable"
-    echo " > [Kill Switch] Next check in ${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL} seconds"
+    # Success summary with change count display
+    if [ "$ADGUARD_MAX_IP_CHANGES" -le 0 ]; then
+        log "🛡️ Secure: VPN=$CURRENT_IP, Changes=$VPN_IP_CHANGE_COUNT (unlimited)"
+    else
+        log "🛡️ Secure: VPN=$CURRENT_IP, Changes=$VPN_IP_CHANGE_COUNT/$ADGUARD_MAX_IP_CHANGES"
+    fi
+    
 done
 
 # =============================================================================
 # Script End
 # =============================================================================
-# This point should never be reached during normal operation
-# The script is designed to run continuously until VPN failure is detected
