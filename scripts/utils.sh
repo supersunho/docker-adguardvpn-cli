@@ -215,7 +215,7 @@ check_adguard_vpn_status() {
     
     # Output raw status for debugging purposes
     # This helps troubleshoot issues when VPN status is not as expected
-    # echo " > [Utils] AdGuard VPN raw status output: '$status'" >&2
+    echo " > [Utils] AdGuard VPN raw status output: '$status'" >&2
     
     # =========================================================================
     # Connection Status Analysis
