@@ -11,12 +11,15 @@ log() { echo -e "[$(basename "${BASH_SOURCE[1]}" .sh)] $1"; }
 
 # =============================================================================
 # Public IP Detection Function with Persistent Method Storage
-# =============================================================================
+# ============================================================================= 
 get_public_ip() {
-    local ip=""
     local IP_METHOD_FILE="/tmp/adguard_ip_method.txt"
+    local dns_ip=""
+    local http_ip=""
+    local dns_method=""
+    local http_method=""
     
-    # DNS and HTTP method arrays (same as before)
+    # DNS and HTTP method arrays
     local dns_methods=(
         "OpenDNS|dig +short myip.opendns.com @resolver1.opendns.com"
         "Google DNS|dig TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'\"' '{print \$2}'"
@@ -36,34 +39,7 @@ get_public_ip() {
         "ifconfig.me|https://ifconfig.me/ip"
     )
     
-    # =========================================================================
-    # Try Previously Successful Method First (from file)
-    # =========================================================================
-    if [ -f "$IP_METHOD_FILE" ]; then
-        local saved_method=$(cat "$IP_METHOD_FILE" 2>/dev/null)
-        
-        if [ -n "$saved_method" ]; then
-            IFS='|' read -r type name command <<< "$saved_method"
-            log "🔄 Reusing saved method: $name" >&2
-            
-            # Try the previously successful method
-            ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
-            
-            if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                log "✅ Consistent method: $name -> $ip" >&2
-                echo "$ip"
-                return 0
-            else
-                log "⚠️ Saved method failed, removing and trying alternatives..." >&2
-                # Remove failed method file
-                rm -f "$IP_METHOD_FILE"
-            fi
-        fi
-    fi
-    
-    # =========================================================================
-    # Original Discovery Logic (when no successful method saved)
-    # =========================================================================
+    # Helper function
     shuffle_array() {
         local -n arr=$1
         local i tmp size rand
@@ -74,61 +50,169 @@ get_public_ip() {
         done
     }
     
-    # Try DNS methods first
-    if command -v dig >/dev/null 2>&1; then
-        log "📡 Discovering reliable DNS method..." >&2
+    # =========================================================================
+    # Load saved methods or use discovery
+    # =========================================================================
+    local saved_dns_method=""
+    local saved_http_method=""
+    
+    if [ -f "$IP_METHOD_FILE" ]; then
+        while IFS='|' read -r type name command; do
+            if [ "$type" = "dns" ]; then
+                saved_dns_method="$name|$command"
+            elif [ "$type" = "http" ]; then
+                saved_http_method="$name|$command"
+            fi
+        done < "$IP_METHOD_FILE"
+    fi
+    
+    # =========================================================================
+    # DNS Method Detection
+    # =========================================================================
+    if [ -n "$saved_dns_method" ]; then
+        IFS='|' read -r name command <<< "$saved_dns_method"
+        log "🔄 DNS: Reusing saved method ($name)" >&2
+        dns_ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
+        
+        if [[ $dns_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            dns_method="$name"
+            log "✅ DNS: $name -> $dns_ip" >&2
+        else
+            log "⚠️ DNS: Saved method failed, discovering new..." >&2
+            dns_ip=""
+        fi
+    fi
+    
+    # DNS discovery if no saved method or saved method failed
+    if [ -z "$dns_ip" ] && command -v dig >/dev/null 2>&1; then
+        log "📡 DNS: Discovering reliable method..." >&2
         shuffle_array dns_methods
         
         for method in "${dns_methods[@]}"; do
             IFS='|' read -r name command <<< "$method"
-            log "🔍 $name" >&2
+            log "🔍 DNS: Testing $name" >&2
             
-            ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
+            local ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
             
             if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                # Save successful method to file
-                echo "dns|$name|$command" > "$IP_METHOD_FILE"
-                log "✅ $name: $ip (saved for future use)" >&2
-                echo "$ip"
-                return 0
+                dns_ip="$ip"
+                dns_method="$name"
+                log "✅ DNS: $name -> $ip" >&2
+                break
             else
-                log "❌ $name failed" >&2
+                log "❌ DNS: $name failed" >&2
             fi
         done
-        
-        log "⚠️ DNS methods failed, trying HTTP..." >&2
-    else
-        log "⚠️ dig not available, using HTTP only" >&2
     fi
     
-    # Try HTTP services
-    log "🌐 Discovering reliable HTTP service..." >&2
-    shuffle_array http_services
+    # =========================================================================
+    # HTTP Method Detection
+    # =========================================================================
+    if [ -n "$saved_http_method" ]; then
+        IFS='|' read -r name command <<< "$saved_http_method"
+        log "🔄 HTTP: Reusing saved method ($name)" >&2
+        http_ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
+        
+        if [[ $http_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            http_method="$name"
+            log "✅ HTTP: $name -> $http_ip" >&2
+        else
+            log "⚠️ HTTP: Saved method failed, discovering new..." >&2
+            http_ip=""
+        fi
+    fi
     
-    for service in "${http_services[@]}"; do
-        IFS='|' read -r name url <<< "$service"
-        log "🔍 $name" >&2
+    # HTTP discovery if no saved method or saved method failed
+    if [ -z "$http_ip" ]; then
+        log "🌐 HTTP: Discovering reliable method..." >&2
+        shuffle_array http_services
         
-        ip=$(curl -4 -s --connect-timeout 5 --max-time 10 "$url" 2>/dev/null | head -n1 | tr -d '\n\r ')
-        
-        if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            # Save successful method to file
-            echo "http|$name|curl -4 -s --connect-timeout 5 --max-time 10 $url" > "$IP_METHOD_FILE"
-            log "✅ $name: $ip (saved for future use)" >&2
-            echo "$ip"
+        for service in "${http_services[@]}"; do
+            IFS='|' read -r name url <<< "$service"
+            log "🔍 HTTP: Testing $name" >&2
+            
+            local ip=$(curl -4 -s --connect-timeout 5 --max-time 10 "$url" 2>/dev/null | head -n1 | tr -d '\n\r ')
+            
+            if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                http_ip="$ip"
+                http_method="$name"
+                log "✅ HTTP: $name -> $ip" >&2
+                break
+            else
+                log "❌ HTTP: $name failed" >&2
+            fi
+        done
+    fi
+    
+    # =========================================================================
+    # Results Analysis and Comparison
+    # =========================================================================
+    if [ -n "$dns_ip" ] && [ -n "$http_ip" ]; then
+        # Both methods successful
+        if [ "$dns_ip" = "$http_ip" ]; then
+            log "🎯 IP Consistency: DNS & HTTP both report $dns_ip" >&2
+            # Save both successful methods
+            echo "dns|$dns_method|$(get_dns_command "$dns_method")" > "$IP_METHOD_FILE"
+            echo "http|$http_method|$(get_http_command "$http_method")" >> "$IP_METHOD_FILE"
+            echo "$dns_ip"  # Return consistent IP
             return 0
         else
-            log "❌ $name failed" >&2
+            log "⚠️ IP Mismatch: DNS=$dns_ip, HTTP=$http_ip" >&2
+            log "📊 This could indicate network routing differences" >&2
+            # Return DNS result as primary but log the difference
+            echo "$dns_ip"
+            return 0
         fi
-    done
-    
-    # All methods failed
-    log "🚨 All IP detection methods failed!" >&2
-    log "🔌 Check network connectivity" >&2
-    
-    echo "ERROR"
-    return 1
+        
+    elif [ -n "$dns_ip" ]; then
+        # Only DNS successful
+        log "📡 Only DNS method successful: $dns_ip" >&2
+        echo "dns|$dns_method|$(get_dns_command "$dns_method")" > "$IP_METHOD_FILE"
+        echo "$dns_ip"
+        return 0
+        
+    elif [ -n "$http_ip" ]; then
+        # Only HTTP successful
+        log "🌐 Only HTTP method successful: $http_ip" >&2
+        echo "http|$http_method|$(get_http_command "$http_method")" > "$IP_METHOD_FILE"
+        echo "$http_ip"
+        return 0
+        
+    else
+        # Both methods failed
+        log "🚨 All IP detection methods failed!" >&2
+        log "🔌 Check network connectivity" >&2
+        rm -f "$IP_METHOD_FILE"  # Clear saved methods
+        echo "ERROR"
+        return 1
+    fi
 }
+
+# Helper functions to reconstruct commands
+get_dns_command() {
+    case "$1" in
+        "OpenDNS") echo "dig +short myip.opendns.com @resolver1.opendns.com" ;;
+        "Google DNS") echo "dig TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'\"' '{print \$2}'" ;;
+        "Cloudflare 1.0.0.1") echo "dig +short txt ch whoami.cloudflare @1.0.0.1 | tr -d '\"'" ;;
+        "Cloudflare 1.1.1.1") echo "dig +short txt ch whoami.cloudflare @1.1.1.1 | tr -d '\"'" ;;
+    esac
+}
+
+get_http_command() {
+    case "$1" in
+        "AWS")         echo "curl -4 -s --connect-timeout 5 --max-time 10 https://checkip.amazonaws.com" ;;
+        "IPify")       echo "curl -4 -s --connect-timeout 5 --max-time 10 https://api.ipify.org" ;;
+        "IPinfo")      echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ipinfo.io/ip" ;;
+        "ifconfig.co") echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ifconfig.co" ;;
+        "icanhazip")   echo "curl -4 -s --connect-timeout 5 --max-time 10 https://icanhazip.com" ;;
+        "IPecho")      echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ipecho.net/plain" ;;
+        "ident.me")    echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ident.me" ;;
+        "DNS-O-Matic") echo "curl -4 -s --connect-timeout 5 --max-time 10 https://myip.dnsomatic.com" ;;
+        "ifconfig.me") echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ifconfig.me/ip" ;;
+        *)             echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ipinfo.io/ip" ;;
+    esac
+}
+
 
 # =============================================================================
 # AdGuard VPN Status Check Function
@@ -159,8 +243,4 @@ check_adguard_vpn_status() {
         [ -z "$status" ] && log "⚠️ Empty status response" >&2
         return 1
     fi
-}
-
-# =============================================================================
-# End of Utility Functions
-# =============================================================================
+} 
