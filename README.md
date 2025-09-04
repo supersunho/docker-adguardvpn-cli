@@ -149,7 +149,7 @@ services:
 | ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"        | auto / http2 / quic      |
 | ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"         | on / off                 |
 | ✨ADGUARD_MAX_LEAK_TOLERANCE | Termination on first leak (0 = immediate termination on first leak) | 0 | |
-| ✨ADGUARD_LEAK_WARNING_ONLY | When a leak, only an warning (true = warning only, false = terminate) | false | true /false |
+| ✨ADGUARD_LEAK_WARNING_ONLY | When a leak, only an warning (true = warning only, false = terminate) | false | true / false |
 | ✨ADGUARD_MAX_IP_DETECTION_RETRIES | Maximum number of IP detection attempts | 3 | number |
 | ✨ADGUARD_IP_DETECTION_RETRY_DELAY | IP detection retry delay Seconds | 10 | number |
 
