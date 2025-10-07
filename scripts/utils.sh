@@ -7,13 +7,25 @@ log() { echo -e "[$(basename "${BASH_SOURCE[1]}" .sh)] $1"; }
 
 # =============================================================================
 # Public IP Detection Function with Persistent Method Storage
-# ============================================================================= 
+# Supports both TUN and SOCKS5 modes
+# =============================================================================
 get_public_ip() {
     local IP_METHOD_FILE="/tmp/adguard_ip_method.txt"
     local dns_ip=""
     local http_ip=""
     local dns_method=""
     local http_method=""
+    
+    # Detect connection mode (TUN or SOCKS)
+    local connection_mode="${ADGUARD_CONNECTION_TYPE,,}"  
+    local use_socks5=false
+    
+    if [ "$connection_mode" = "socks" ]; then
+        use_socks5=true
+        log "📡 IP Detection Mode: SOCKS5 Proxy" >&2
+    else
+        log "📡 IP Detection Mode: TUN (Direct)" >&2
+    fi
     
     # DNS and HTTP method arrays
     local dns_methods=(
@@ -62,9 +74,9 @@ get_public_ip() {
     fi
     
     # =========================================================================
-    # DNS Method Detection
+    # DNS Method Detection (only in TUN mode: SOCKS5 bypasses DNS)
     # =========================================================================
-    if [ -n "$saved_dns_method" ]; then
+    if [ -n "$saved_dns_method" ] && [ "$use_socks5" = false ]; then
         IFS='|' read -r name command <<< "$saved_dns_method"
         # log "🔄 DNS: Reusing saved method ($name)" >&2
         dns_ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
@@ -81,7 +93,7 @@ get_public_ip() {
     # =========================================================================
     # DNS discovery if no saved method or saved method failed
     # =========================================================================
-    if [ -z "$dns_ip" ] && command -v dig >/dev/null 2>&1; then
+    if [ -z "$dns_ip" ] && [ "$use_socks5" = false ] && command -v dig >/dev/null 2>&1; then
         # log "📡 DNS: Discovering reliable method..." >&2
         shuffle_array dns_methods
         
@@ -103,11 +115,18 @@ get_public_ip() {
     fi
     
     # =========================================================================
-    # HTTP discovery if no saved method or saved method failed
+    # HTTP Method Detection leveraging get_socks5_http_command when SOCKS5 enabled
     # =========================================================================
     if [ -n "$saved_http_method" ]; then
         IFS='|' read -r name command <<< "$saved_http_method"
         # log "🔄 HTTP: Reusing saved method ($name)" >&2
+
+        if [ "$use_socks5" = true ]; then
+            command=$(get_socks5_http_command "$name")
+        else
+            command=$(get_http_command "$name")
+        fi
+        
         http_ip=$(eval "$command" 2>/dev/null | head -n1 | tr -d '\n\r ')
         
         if [[ $http_ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -128,9 +147,17 @@ get_public_ip() {
         
         for service in "${http_services[@]}"; do
             IFS='|' read -r name url <<< "$service"
-            log "🔍 HTTP: Testing $name" >&2
+            log "🔍 HTTP: Testing $name $([ "$use_socks5" = true ] && echo "[via SOCKS5]")" >&2
             
-            local ip=$(curl -4 -s --connect-timeout 5 --max-time 10 "$url" 2>/dev/null | head -n1 | tr -d '\n\r ')
+            local curl_cmd=""
+            
+            if [ "$use_socks5" = true ]; then 
+                curl_cmd=$(get_socks5_http_command "$name")
+            else 
+                curl_cmd=$(get_http_command "$name")
+            fi
+            
+            local ip=$(eval "$curl_cmd" 2>/dev/null | head -n1 | tr -d '\n\r ')
             
             if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 http_ip="$ip"
@@ -156,10 +183,15 @@ get_public_ip() {
             echo "$dns_ip"  # Return consistent IP
             return 0
         else
+            # SOCKS5 mode prefers HTTP IP, otherwise DNS IP
             # log "⚠️ IP Mismatch: DNS=$dns_ip, HTTP=$http_ip" >&2
             # log "📊 This could indicate network routing differences" >&2
             # Return DNS result as primary but log the difference
-            echo "$dns_ip"
+            if [ "$use_socks5" = true ]; then
+                echo "$http_ip"
+            else
+                echo "$dns_ip"
+            fi
             return 0
         fi
         
@@ -173,15 +205,19 @@ get_public_ip() {
     elif [ -n "$http_ip" ]; then
         # Only HTTP successful
         # log "🌐 Only HTTP method successful: $http_ip" >&2
-        echo "http|$http_method|$(get_http_command "$http_method")" > "$IP_METHOD_FILE"
+        echo "http|$http_method|$(get_http_command "$http_method")" >> "$IP_METHOD_FILE"
         echo "$http_ip"
         return 0
         
     else
-        # Both methods failed
-        log "🚨 All IP detection methods failed!" >&2
-        log "🔌 Check network connectivity" >&2
-        rm -f "$IP_METHOD_FILE"  # Clear saved methods
+        if [ "$use_socks5" = true ]; then
+            log "🚨 All IP detection methods failed via SOCKS5 proxy!" >&2
+            log "🔌 Check SOCKS5 proxy connectivity and credentials" >&2
+        else
+            log "🚨 All IP detection methods failed!" >&2
+            log "🔌 Check network connectivity" >&2
+        fi
+        rm -f "$IP_METHOD_FILE"
         echo "ERROR"
         return 1
     fi
@@ -209,6 +245,29 @@ get_http_command() {
         "DNS-O-Matic") echo "curl -4 -s --connect-timeout 5 --max-time 10 https://myip.dnsomatic.com" ;;
         "ifconfig.me") echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ifconfig.me/ip" ;;
         *)             echo "curl -4 -s --connect-timeout 5 --max-time 10 https://ipinfo.io/ip" ;;
+    esac
+}
+
+get_socks5_http_command() {
+    local proxy_auth=""
+ 
+    if [ -n "$ADGUARD_SOCKS5_USERNAME" ] && [ -n "$ADGUARD_SOCKS5_PASSWORD" ]; then
+        proxy_auth="${ADGUARD_SOCKS5_USERNAME}:${ADGUARD_SOCKS5_PASSWORD}@"
+    fi
+
+    local proxy_url="socks5://${proxy_auth}${ADGUARD_SOCKS5_HOST}:${ADGUARD_SOCKS5_PORT}"
+
+    case "$1" in
+        "AWS")         echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://checkip.amazonaws.com" ;;
+        "IPify")       echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://api.ipify.org" ;;
+        "IPinfo")      echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ipinfo.io/ip" ;;
+        "ifconfig.co") echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ifconfig.co" ;;
+        "icanhazip")   echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://icanhazip.com" ;;
+        "IPecho")      echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ipecho.net/plain" ;;
+        "ident.me")    echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ident.me" ;;
+        "DNS-O-Matic") echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://myip.dnsomatic.com" ;;
+        "ifconfig.me") echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ifconfig.me/ip" ;;
+        *)             echo "curl -4 -s --connect-timeout 5 --max-time 10 -x $proxy_url https://ipinfo.io/ip" ;;
     esac
 }
 

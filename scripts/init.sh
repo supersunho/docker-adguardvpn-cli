@@ -57,7 +57,8 @@ fi
 
 log "Running Adguard VPN" 
 log "adguardvpn-cli connect -l $ADGUARD_CONNECTION_LOCATION"
-if [ "${ADGUARD_CONNECTION_TYPE,,}" = "SOCKS" ]; then
+if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+    log "set SOCKS5 Username/Password" 
     adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
     adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
 fi
