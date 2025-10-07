@@ -21,7 +21,8 @@ REAL_IP="ERROR"
 # Get IP before VPN if kill switch is enabled
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log "📡 Getting current IP..."
-    REAL_IP=$(get_public_ip)
+    IP_CMD="dig +short txt ch whoami.cloudflare @1.1.1.1 | tr -d '\"'"
+    REAL_IP=$(eval "$IP_CMD" 2>/dev/null | head -n1 | tr -d '\n\r ')
 fi
 
 # =============================================================================
