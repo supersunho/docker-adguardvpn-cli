@@ -24,9 +24,9 @@ read -p "Press Enter to start the authentication process..."
 
 # Start the login process
 echo ""
-echo "🚀 Executing: docker run -it --rm -v \$(pwd)/data:/root/.local/share/adguardvpn-cli ghcr.io/supersunho/docker-adguardvpn-cli:latest adguardvpn-cli login"
+echo "🚀 Executing: docker run -it --rm -v \$(pwd)/data:/root/.local/share/adguardvpn-cli supersunho/adguardvpn-cli:latest adguardvpn-cli login"
 echo ""
-docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli ghcr.io/supersunho/docker-adguardvpn-cli:latest adguardvpn-cli login
+docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli supersunho/adguardvpn-cli:latest adguardvpn-cli login
 
 echo ""
 echo "✅ Authentication process completed!"

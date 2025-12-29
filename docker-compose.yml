@@ -1,7 +1,7 @@
 version: "3"
 services:
     adguard-vpn-cli:
-        image: ghcr.io/supersunho/docker-adguardvpn-cli:latest
+        image: supersunho/adguardvpn-cli:latest
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
