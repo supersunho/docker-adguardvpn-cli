@@ -3,14 +3,18 @@
 # =============================================================================
 # AdGuard VPN Utility Functions
 # =============================================================================
-log() { echo -e "[$(basename "${BASH_SOURCE[1]}" .sh)] $1"; }
+
+log() { 
+    echo -e "[$(basename "${BASH_SOURCE[1]}" .sh)] $1"
+}
 
 # =============================================================================
 # Public IP Detection Function with Persistent Method Storage
 # Supports both TUN and SOCKS5 modes
 # =============================================================================
+
 get_public_ip() {
-    local IP_METHOD_FILE="/tmp/adguard_ip_method.txt"
+    local IP_METHOD_FILE="/root/.local/share/adguardvpn-cli/ip_method.txt"
     local dns_ip=""
     local http_ip=""
     local dns_method=""
@@ -275,6 +279,7 @@ get_socks5_http_command() {
 # =============================================================================
 # AdGuard VPN Status Check Function
 # =============================================================================
+
 check_adguard_vpn_status() {
     # Check if CLI tool exists
     if ! command -v adguardvpn-cli >/dev/null 2>&1; then
@@ -301,4 +306,4 @@ check_adguard_vpn_status() {
         [ -z "$status" ] && log "⚠️ Empty status response" >&2
         return 1
     fi
-} 
+}
