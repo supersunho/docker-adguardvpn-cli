@@ -5,6 +5,8 @@ services:
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
+        volumes:
+            - ./data:/root/.local/share/adguardvpn-cli
         healthcheck:
             test: ping -c 1 www.google.com || exit 1
             interval: 1m
