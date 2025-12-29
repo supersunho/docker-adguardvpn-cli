@@ -569,23 +569,145 @@ jobs:
         permissions:
             contents: write
         steps:
+            - name: 📥 Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0  # Fetch all history for proper commit analysis
+            
             - name: 🕐 Set current date
               run: echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
+            
+            - name: 📝 Generate release notes with categorized commit history
+              id: release-notes
+              run: |
+                  # Get the tag of the previous release to compare commits
+                  PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p' 2>/dev/null || git rev-list --max-parents=0 HEAD)
+                  if [ -z "$PREV_TAG" ]; then
+                    echo "🔍 No previous tag found, using initial commit"
+                    PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+                  else
+                    echo "🔍 Previous tag found: $PREV_TAG"
+                  fi
+                  
+                  echo "📋 Fetching commits from $PREV_TAG to HEAD"
+                  
+                  # Initialize categorized commit lists
+                  FEATURES=""
+                  BUG_FIXES=""
+                  CHORES=""
+                  DOCS=""
+                  REFACTOR=""
+                  TESTS=""
+                  OTHERS=""
+                  
+                  # Get commits and categorize them
+                  while IFS= read -r line; do
+                    if [ -n "$line" ]; then
+                      COMMIT_HASH=$(echo "$line" | cut -d'|' -f1)
+                      COMMIT_SUBJECT=$(echo "$line" | cut -d'|' -f2-)
+                      
+                      # Categorize commits based on conventional commit prefixes
+                      if [[ $COMMIT_SUBJECT =~ ^(feat|feature|enhance|add)(\(.+\))?:[[:space:]]* ]]; then
+                        FEATURES="${FEATURES}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                      elif [[ $COMMIT_SUBJECT =~ ^(fix|bug|patch)(\(.+\))?:[[:space:]]* ]]; then
+                        BUG_FIXES="${BUG_FIXES}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                      elif [[ $COMMIT_SUBJECT =~ ^(docs|doc)(\(.+\))?:[[:space:]]* ]]; then
+                        DOCS="${DOCS}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                      elif [[ $COMMIT_SUBJECT =~ ^(chore|build|ci|perf|style|test|refactor)(\(.+\))?:[[:space:]]* ]]; then
+                        if [[ $COMMIT_SUBJECT =~ ^refactor ]]; then
+                          REFACTOR="${REFACTOR}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                        elif [[ $COMMIT_SUBJECT =~ ^test ]]; then
+                          TESTS="${TESTS}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                        else
+                          CHORES="${CHORES}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                        fi
+                      else
+                        OTHERS="${OTHERS}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
+                      fi
+                    fi
+                  done < <(git log --oneline "${PREV_TAG}..HEAD" --pretty=format:"%h|%s" | sort -k2)
+                  
+                  # Create release notes body with categorized commits
+                  RELEASE_NOTES="# 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.build_version }}
+
+                  **Build Date**: ${{ env.BUILD_DATE }}
+                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}
+                  **Build/Release Version**: ${{ needs.prepare.outputs.build_version_base }}
+                  **Universal Compatibility**: ✅ Auto-architecture detection enabled
+                  **Build Workflow**: #${{ github.run_number }}
+
+                  ## 📋 Changelog
+
+                  "
+                  
+                  # Add categorized sections to release notes
+                  if [ -n "$FEATURES" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### ✨ Features
+                  ${FEATURES}
+
+                  "
+                  fi
+                  
+                  if [ -n "$BUG_FIXES" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 🐛 Bug Fixes
+                  ${BUG_FIXES}
+
+                  "
+                  fi
+                  
+                  if [ -n "$REFACTOR" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 🔧 Refactoring
+                  ${REFACTOR}
+
+                  "
+                  fi
+                  
+                  if [ -n "$TESTS" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 🧪 Tests
+                  ${TESTS}
+
+                  "
+                  fi
+                  
+                  if [ -n "$DOCS" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 📚 Documentation
+                  ${DOCS}
+
+                  "
+                  fi
+                  
+                  if [ -n "$CHORES" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 📦 Chores
+                  ${CHORES}
+
+                  "
+                  fi
+                  
+                  if [ -n "$OTHERS" ]; then
+                    RELEASE_NOTES="${RELEASE_NOTES}### 🔄 Other Changes
+                  ${OTHERS}
+
+                  "
+                  fi
+                  
+                  # Export release notes to file and GitHub output
+                  echo -e "$RELEASE_NOTES" > release-notes.txt
+                  echo "body<<EOF" >> $GITHUB_OUTPUT
+                  echo -e "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+                  
+                  echo "✅ Release notes generated successfully"
+                  echo "📋 Release notes preview:"
+                  echo "----------------------------------------"
+                  echo -e "$RELEASE_NOTES"
+                  echo "----------------------------------------"
+            
             - name: 🏷️ Create comprehensive GitHub Release for AdGuard VPN CLI
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.build_version }}-build-${{ github.run_number }}
                   name: "AdGuard VPN CLI Universal Multi-Arch Release ${{ needs.prepare.outputs.build_version }} (Build #${{ github.run_number }})"
-                  body: |
-                      # 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.build_version }}
-
-                      **Build Date**: ${{ env.BUILD_DATE }}  
-                      **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}  
-                      **Build/Release Version**: ${{ needs.prepare.outputs.build_version_base }}  
-                      **Universal Compatibility**: ✅ Auto-architecture detection enabled  
-                      **Build Workflow**: #${{ github.run_number }}
-
-                      
+                  body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/*/digest.txt
                   draft: false
                   prerelease: false
