@@ -55,6 +55,10 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
+> [!IMPORTANT]
+> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
+
+
 <!--
 
 ### Built With
@@ -76,6 +80,19 @@ This project allows you to use AdguardVPN-CLI within a Docker container. It prov
 
 Before proceeding, please review the following content and create your .env file accordingly. You can refer to the .env.sample file provided in this repository for guidance.
 
+### Authentication Setup
+
+> [!IMPORTANT]
+> **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
+
+1. **First-time Setup**:
+   - Perform initial authentication: `./scripts/auth.sh` (or run directly: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli ghcr.io/supersunho/docker-adguardvpn-cli:latest adguardvpn-cli login`)
+   - Follow the instructions to authenticate in your browser
+   - Start the main container: `docker-compose up -d`
+
+2. **Volume Mount**: The container now mounts `./data` directory to persist authentication credentials across container restarts.
+
+
 <!-- USAGE EXAMPLES -->
 
 ## How to use
@@ -90,6 +107,8 @@ services:
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
+        volumes:
+            - ./data:/root/.local/share/adguardvpn-cli
         healthcheck:
             test: ping -c 1 www.google.com || exit 1
             interval: 1m
@@ -148,6 +167,9 @@ services:
 | ADGUARD_SHOW_NOTIFICATIONS             | Get notified about the status of the VPN connection                                                                                              | "on"          | on / off                 |
 | ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"        | auto / http2 / quic      |
 | ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"         | on / off                 |
+| ADGUARD_TELEMETRY                      | Set whether to send anonymized usage data to developers                                                                                           | false         | true / false             |
+| ADGUARD_TUN_ROUTING_MODE               | Set VPN tunnel routing mode                                                                                                                       | "AUTO"        | AUTO / SCRIPT / NONE     |
+| ADGUARD_BOUND_IF_OVERRIDE              | Override network interface to use for outbound VPN traffic (pass "" to disable)                                                                   | ""            | interface name or ""     |
 | ✨ADGUARD_MAX_LEAK_TOLERANCE | Termination on first leak (0 = immediate termination on first leak) | 0 | |
 | ✨ADGUARD_LEAK_WARNING_ONLY | When a leak, only an warning (true = warning only, false = terminate) | false | true / false |
 | ✨ADGUARD_MAX_IP_DETECTION_RETRIES | Maximum number of IP detection attempts | 3 | number |
@@ -158,6 +180,9 @@ services:
 
 > [!IMPORTANT]
 > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+
+> [!NOTE]
+> **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
