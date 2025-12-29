@@ -246,7 +246,20 @@ while true; do
     # =========================================================================
     if [ $((TOTAL_HEALTH_CHECKS % 100)) -eq 0 ]; then
         log "🧹 Performing periodic cleanup..."
-        # Perform temporary file cleanup or log compression if needed
+        
+        # Clean up temporary variables to free memory
+        unset TEMP_VAR
+        
+        # Sync filesystems to ensure data integrity
+        sync
+        
+        # Log memory usage
+        if command -v free >/dev/null 2>&1; then
+            log "📊 Memory usage:"
+            free -h | grep -E '^(Mem:|Swap:)' | while read -r line; do
+                log "   └── $line"
+            done
+        fi
     fi
     
 done
