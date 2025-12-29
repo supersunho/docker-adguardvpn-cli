@@ -1,5 +1,5 @@
 FROM ubuntu:24.04 AS base
-ARG AGCLI_VERSION=1.5.10
+ARG AGCLI_VERSION=latest
 
 ENV USER=root                     
 ENV DEBIAN_FRONTEND=noninteractive 
@@ -30,9 +30,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "✅ CA certificates updated"
 
 # Download and install AdGuard VPN CLI
-RUN curl -fsSL https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/HEAD/scripts/release/install.sh \
-    | sh -s -- -V "$AGCLI_VERSION" -a y
-
+RUN curl -fsSL https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/master/scripts/release/install.sh | sh -s -- -v -a y
 WORKDIR /opt/adguardvpn_cli
 COPY --chmod=755 ./scripts/*.sh ./scripts/
 
