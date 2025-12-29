@@ -55,9 +55,7 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT]
-> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
-
+> [!IMPORTANT] > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
 
@@ -82,16 +80,22 @@ Before proceeding, please review the following content and create your .env file
 
 ### Authentication Setup
 
-> [!IMPORTANT]
-> **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
+> [!IMPORTANT] > **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
 
 1. **First-time Setup**:
-   - Perform initial authentication: `./scripts/auth.sh` (or run directly: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli ghcr.io/supersunho/docker-adguardvpn-cli:latest adguardvpn-cli login`)
-   - Follow the instructions to authenticate in your browser
-   - Start the main container: `docker-compose up -d`
+
+    - Perform initial authentication: `./scripts/auth.sh` (or run directly: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli login`)
+    - Follow the instructions to authenticate in your browser
+    - Start the main container: `docker-compose up -d`
 
 2. **Volume Mount**: The container now mounts `./data` directory to persist authentication credentials across container restarts.
 
+3. **Direct Command Execution**: If you need to run other AdGuard VPN CLI commands directly (not just login), you can use the `--entrypoint` option:
+    - For login: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli login`
+    - For other commands: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli [command]`
+
+> [!NOTE]
+> The default container entrypoint runs the VPN connection process automatically. To execute specific AdGuard VPN CLI commands directly, you need to override the entrypoint using the `--entrypoint` option as shown above.
 
 <!-- USAGE EXAMPLES -->
 
@@ -103,7 +107,7 @@ AdguardVPN-CLI + qBittorrent
 version: "3"
 services:
     adguard-vpn-cli:
-        image: ghcr.io/supersunho/docker-adguardvpn-cli:latest
+        image: supersunho/adguardvpn-cli:latest
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
@@ -145,44 +149,41 @@ services:
 
 ## Prerequisites
 
-| Variable                               | Description                                                                                                                                      | Default value | Allow values             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------ |
-| ADGUARD_USERNAME                       | Username for login                                                                                                                               | "username"    |                          |
-| ADGUARD_PASSWORD                       | Password for login                                                                                                                               | "password"    |                          |
-| ADGUARD_CONNECTION_LOCATION            | Defaults to the last used location                                                                                                               | "JP"          |                          |
-| ADGUARD_CONNECTION_TYPE                | Set VPN operating mode                                                                                                                           | "TUN"         | TUN / SOCKS              |
-| ADGUARD_SOCKS5_USERNAME                | Set the SOCKS username                                                                                                                           | "username"    |                          |
-| ADGUARD_SOCKS5_PASSWORD                | Set the SOCKS password                                                                                                                           | "password"    |                          |
-| ADGUARD_SOCKS5_HOST                    | Set the SOCKS listen host.                                                                                                                       | "127.0.0.1"   |                          |
-| ADGUARD_SOCKS5_PORT                    | Set the SOCKS port                                                                                                                               | 1080          |                          |
-| ADGUARD_SEND_REPORTS                   | Send crash reports to developers                                                                                                                 | false         | true / false             |
-| ADGUARD_SET_SYSTEM_DNS                 | Set the system DNS servers                                                                                                                       | false         | true / false             |
-| ADGUARD_USE_CUSTOM_DNS                 | Use the custom DNS servers                                                                                                                       | true          | true / false             |
-| ADGUARD_CUSTOM_DNS                     | Set the DNS upstream server                                                                                                                      | "1.1.1.1"     |                          |
-| ADGUARD_USE_KILL_SWITCH                | Use the Kill Switch                                                                                                                              | true          | true / false             |
-| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Check interval for Kill Switch                                                                                                                   | 30            |                          |
-| ADGUARD_UPDATE_CHANNEL                 | Set update channel                                                                                                                               | "release"     | release / beta / nightly |
-| ADGUARD_SHOW_HINTS                     | Show hints after command execution                                                                                                               | "on"          | on / off                 |
-| ADGUARD_DEBUG_LOGGING                  | Set debug logging                                                                                                                                | "on"          | on / off                 |
-| ADGUARD_SHOW_NOTIFICATIONS             | Get notified about the status of the VPN connection                                                                                              | "on"          | on / off                 |
-| ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"        | auto / http2 / quic      |
-| ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"         | on / off                 |
-| ADGUARD_TELEMETRY                      | Set whether to send anonymized usage data to developers                                                                                           | false         | true / false             |
-| ADGUARD_TUN_ROUTING_MODE               | Set VPN tunnel routing mode                                                                                                                       | "AUTO"        | AUTO / SCRIPT / NONE     |
-| ADGUARD_BOUND_IF_OVERRIDE              | Override network interface to use for outbound VPN traffic (pass "" to disable)                                                                   | ""            | interface name or ""     |
-| ✨ADGUARD_MAX_LEAK_TOLERANCE | Termination on first leak (0 = immediate termination on first leak) | 0 | |
-| ✨ADGUARD_LEAK_WARNING_ONLY | When a leak, only an warning (true = warning only, false = terminate) | false | true / false |
-| ✨ADGUARD_MAX_IP_DETECTION_RETRIES | Maximum number of IP detection attempts | 3 | number |
-| ✨ADGUARD_IP_DETECTION_RETRY_DELAY | IP detection retry delay Seconds | 10 | number |
+| Variable                               | Description                                                                                                                                      | Default value                                                         | Allow values             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------ | ------------ |
+| ADGUARD_USERNAME                       | Username for login                                                                                                                               | "username"                                                            |                          |
+| ADGUARD_PASSWORD                       | Password for login                                                                                                                               | "password"                                                            |                          |
+| ADGUARD_CONNECTION_LOCATION            | Defaults to the last used location                                                                                                               | "JP"                                                                  |                          |
+| ADGUARD_CONNECTION_TYPE                | Set VPN operating mode                                                                                                                           | "TUN"                                                                 | TUN / SOCKS              |
+| ADGUARD_SOCKS5_USERNAME                | Set the SOCKS username                                                                                                                           | "username"                                                            |                          |
+| ADGUARD_SOCKS5_PASSWORD                | Set the SOCKS password                                                                                                                           | "password"                                                            |                          |
+| ADGUARD_SOCKS5_HOST                    | Set the SOCKS listen host.                                                                                                                       | "127.0.0.1"                                                           |                          |
+| ADGUARD_SOCKS5_PORT                    | Set the SOCKS port                                                                                                                               | 1080                                                                  |                          |
+| ADGUARD_SEND_REPORTS                   | Send crash reports to developers                                                                                                                 | false                                                                 | true / false             |
+| ADGUARD_SET_SYSTEM_DNS                 | Set the system DNS servers                                                                                                                       | false                                                                 | true / false             |
+| ADGUARD_USE_CUSTOM_DNS                 | Use the custom DNS servers                                                                                                                       | true                                                                  | true / false             |
+| ADGUARD_CUSTOM_DNS                     | Set the DNS upstream server                                                                                                                      | "1.1.1.1"                                                             |                          |
+| ADGUARD_USE_KILL_SWITCH                | Use the Kill Switch                                                                                                                              | true                                                                  | true / false             |
+| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Check interval for Kill Switch                                                                                                                   | 30                                                                    |                          |
+| ADGUARD_UPDATE_CHANNEL                 | Set update channel                                                                                                                               | "release"                                                             | release / beta / nightly |
+| ADGUARD_SHOW_HINTS                     | Show hints after command execution                                                                                                               | "on"                                                                  | on / off                 |
+| ADGUARD_DEBUG_LOGGING                  | Set debug logging                                                                                                                                | "on"                                                                  | on / off                 |
+| ADGUARD_SHOW_NOTIFICATIONS             | Get notified about the status of the VPN connection                                                                                              | "on"                                                                  | on / off                 |
+| ADGUARD_PROTOCOL                       | Set the protocol used by AdGuard VPN                                                                                                             | "auto"                                                                | auto / http2 / quic      |
+| ADGUARD_POST_QUANTUM                   | Set whether to use advanced cryptographic algorithms resistant to quantum computer attacks to protect your traffic from potential future threats | "off"                                                                 | on / off                 |
+| ADGUARD_TELEMETRY                      | Set whether to send anonymized usage data to developers                                                                                          | false                                                                 | true / false             |
+| ADGUARD_TUN_ROUTING_MODE               | Set VPN tunnel routing mode                                                                                                                      | "AUTO"                                                                | AUTO / SCRIPT / NONE     |
+| ADGUARD_BOUND_IF_OVERRIDE              | Override network interface to use for outbound VPN traffic (pass "" to disable)                                                                  | ""                                                                    | interface name or ""     |
+| ✨ADGUARD_MAX_LEAK_TOLERANCE           | Termination on first leak (0 = immediate termination on first leak)                                                                              | 0                                                                     |                          |
+|                                        | ✨ADGUARD_LEAK_WARNING_ONLY                                                                                                                      | When a leak, only an warning (true = warning only, false = terminate) | false                    | true / false |
+|                                        | ✨ADGUARD_MAX_IP_DETECTION_RETRIES                                                                                                               | Maximum number of IP detection attempts                               | 3                        | number       |
+|                                        | ✨ADGUARD_IP_DETECTION_RETRY_DELAY                                                                                                               | IP detection retry delay Seconds                                      | 10                       | number       |
 
-> [!IMPORTANT]
-> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 
-> [!IMPORTANT]
-> `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
 
-> [!NOTE]
-> **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
+> [!NOTE] > **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
