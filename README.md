@@ -55,7 +55,8 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT] > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
+> [!IMPORTANT] 
+> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
 
@@ -80,7 +81,8 @@ Before proceeding, please review the following content and create your .env file
 
 ### Authentication Setup
 
-> [!IMPORTANT] > **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
+> [!IMPORTANT] 
+> **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
 
 1. **First-time Setup**:
 
@@ -174,11 +176,10 @@ services:
 | ✨ADGUARD_MAX_IP_DETECTION_RETRIES     | Maximum number of IP detection attempts                                                                                                          | 3             | number                   |
 | ✨ADGUARD_IP_DETECTION_RETRY_DELAY     | IP detection retry delay Seconds                                                                                                                 | 10            | number                   |
 
-> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
-
-> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
-
-> [!NOTE] > **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
+> [!IMPORTANT] 
+> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+> - **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
