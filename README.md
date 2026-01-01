@@ -55,8 +55,7 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT] 
-> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
+> [!IMPORTANT] > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
 
@@ -81,14 +80,15 @@ Before proceeding, please review the following content and create your .env file
 
 ### Authentication Setup
 
-> [!IMPORTANT]
-> **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
+> [!IMPORTANT] > **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
 
 1. **First-time Setup**:
 
     - Start the main container: `docker-compose up -d`
     - Check the logs to find the authentication link: `docker logs adguard-vpn-cli`
     - **When running adguardvpn-cli for the first time, check the docker logs for the authentication link. Once you access the link and complete the authentication, you won't need to authenticate again for subsequent runs. The link format looks like `https://auth.adguard.io/device_code?user_code=xxxx`.**
+    - **Note**: If you have authenticated via the web browser, please wait a moment for the process to continue automatically. It is not frozen.
+    - **Warning**: If Two-Factor Authentication (2FA) is enabled on your account, you may experience issues with this login process.
 
 2. **Volume Mount**: The container now mounts `./data` directory to persist authentication credentials across container restarts.
 
