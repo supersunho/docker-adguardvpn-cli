@@ -3,8 +3,8 @@
 # Import utility functions
 source /opt/adguardvpn_cli/scripts/utils.sh
 
-export ADGUARD_USERNAME=${ADGUARD_USERNAME:-"username"}
-export ADGUARD_PASSWORD=${ADGUARD_PASSWORD:-"password"}
+# export ADGUARD_USERNAME=${ADGUARD_USERNAME:-"username"}
+# export ADGUARD_PASSWORD=${ADGUARD_PASSWORD:-"password"}
 export ADGUARD_CONNECTION_LOCATION=${ADGUARD_CONNECTION_LOCATION:-"JP"}
 export ADGUARD_CONNECTION_TYPE=${ADGUARD_CONNECTION_TYPE:-"TUN"}
 export ADGUARD_SOCKS5_USERNAME=${ADGUARD_SOCKS5_USERNAME:-"username"}
@@ -27,36 +27,12 @@ export ADGUARD_TUN_ROUTING_MODE=${ADGUARD_TUN_ROUTING_MODE:-"AUTO"}
 export ADGUARD_BOUND_IF_OVERRIDE=${ADGUARD_BOUND_IF_OVERRIDE:-""}
 
 # Check if authentication already exists
-AUTH_FILE="/root/.local/share/adguardvpn-cli/adguardvpn-cli.conf"
+AUTH_FILE="/root/.local/share/adguardvpn-cli/vpn.pid"
 if [ -f "$AUTH_FILE" ]; then
     log "🔑 Authentication credentials found. Using existing session."
 else
     log "🔐 No authentication credentials found. Starting web authentication process..."
-    log "📋 Please follow these steps to authenticate:"
-    log "   1. Run the following command to authenticate:"
-    log "      docker run -it --rm -v \$(pwd)/data:/root/.local/share/adguardvpn-cli supersunho/adguardvpn-cli:latest adguardvpn-cli login"
-    log "   2. Follow the web authentication flow in your browser"
-    log "   3. Enter the code when prompted"
-    log "   4. Wait for authentication to complete"
-    log "   5. After successful authentication, start the main container"
-    log "⚠️  Authentication is required before VPN can connect"
-    exit 1
-fi
-
-# Verify authentication status
-log "🔍 Verifying authentication status..."
-if adguardvpn-cli status | grep -q "Not logged in"; then
-    log "❌ Authentication is not valid. Please re-authenticate using the web flow."
-    log "📋 Please follow these steps to authenticate:"
-    log "   1. Run the following command to authenticate:"
-    log "      docker run -it --rm -v \$(pwd)/data:/root/.local/share/adguardvpn-cli supersunho/adguardvpn-cli:latest adguardvpn-cli login"
-    log "   2. Follow the web authentication flow in your browser"
-    log "   3. Enter the code when prompted"
-    log "   4. Wait for authentication to complete"
-    log "   5. After successful authentication, start the main container"
-    exit 1
-else
-    log "✅ Authentication verified successfully"
+    adguardvpn-cli login
 fi
 
 # log "Updating Adguard VPN CLI..."

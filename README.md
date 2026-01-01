@@ -55,8 +55,7 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT]
-> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
+> [!IMPORTANT] > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
 
@@ -86,18 +85,11 @@ Before proceeding, please review the following content and create your .env file
 
 1. **First-time Setup**:
 
-    - Perform initial authentication: `./scripts/auth.sh` (or run directly: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli login`)
-    - Follow the instructions to authenticate in your browser
     - Start the main container: `docker-compose up -d`
+    - Check the logs to find the authentication link: `docker logs adguard-vpn-cli`
+    - **When running adguardvpn-cli for the first time, check the docker logs for the authentication link. Once you access the link and complete the authentication, you won't need to authenticate again for subsequent runs. The link format looks like `https://auth.adguard.io/device_code?user_code=xxxx`.**
 
 2. **Volume Mount**: The container now mounts `./data` directory to persist authentication credentials across container restarts.
-
-3. **Direct Command Execution**: If you need to run other AdGuard VPN CLI commands directly (not just login), you can use the `--entrypoint` option:
-    - For login: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli login`
-    - For other commands: `docker run -it --rm -v $(pwd)/data:/root/.local/share/adguardvpn-cli --entrypoint "" supersunho/adguardvpn-cli:latest adguardvpn-cli [command]`
-
-> [!NOTE]
-> The default container entrypoint runs the VPN connection process automatically. To execute specific AdGuard VPN CLI commands directly, you need to override the entrypoint using the `--entrypoint` option as shown above.
 
 <!-- USAGE EXAMPLES -->
 
@@ -181,14 +173,11 @@ services:
 | ✨ADGUARD_MAX_IP_DETECTION_RETRIES     | Maximum number of IP detection attempts                                                                                                          | 3             | number                   |
 | ✨ADGUARD_IP_DETECTION_RETRY_DELAY     | IP detection retry delay Seconds                                                                                                                 | 10            | number                   |
 
-> [!IMPORTANT]
-> `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> [!IMPORTANT] > `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 
-> [!IMPORTANT]
-> `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+> [!IMPORTANT] > `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
 
-> [!NOTE]
-> **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
+> [!NOTE] > **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
