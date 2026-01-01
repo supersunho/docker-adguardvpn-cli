@@ -55,7 +55,8 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT] > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
+> [!IMPORTANT] 
+> **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
 
