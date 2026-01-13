@@ -55,6 +55,41 @@ fi
 log "✅ VPN service is running"
 
 # =============================================================================
+# Wait for VPN tunnel to be active
+# =============================================================================
+
+log "⏳ Waiting for VPN tunnel to become active..."
+
+# Wait for VPN to be connected and tunnel to be active
+elapsed_time=0
+CHECK_INTERVAL=2
+MAX_WAIT_TIME=30
+
+while [ $elapsed_time -lt $MAX_WAIT_TIME ]; do
+    if check_adguard_vpn_status; then
+        # Additional check: try to get IP to ensure tunnel is active
+        temp_ip=$(get_public_ip)
+        if [ "$temp_ip" != "ERROR" ] && [ "$temp_ip" != "$REAL_IP_BEFORE_VPN" ]; then
+            log "✅ VPN tunnel is active and IP has changed: $temp_ip"
+            break
+        else
+            log "⏳ VPN connected but tunnel may not be ready, checking again in $CHECK_INTERVAL seconds..."
+        fi
+    else
+        log "⏳ VPN not connected yet, checking again in $CHECK_INTERVAL seconds..."
+    fi
+    
+    sleep $CHECK_INTERVAL
+    elapsed_time=$((elapsed_time + CHECK_INTERVAL))
+done
+
+if [ $elapsed_time -ge $MAX_WAIT_TIME ]; then
+    log "🚨 Timed out waiting for VPN tunnel to become active!"
+    log "🚨 Please ensure VPN is properly connected before running Kill Switch"
+    exit 1
+fi
+
+# =============================================================================
 # Initial IP Detection and Validation
 # =============================================================================
 
