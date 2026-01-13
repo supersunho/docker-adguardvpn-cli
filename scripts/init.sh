@@ -39,7 +39,7 @@ fi
 # adguardvpn-cli update -y
 
 log "Configuring Adguard VPN..."
-adguardvpn-cli config set-mode "$ADGUARD_CONNECTION_TYPE" 
+adguardvpn-cli config set-mode "${ADGUARD_CONNECTION_TYPE,,}" 
 adguardvpn-cli config clear-socks-auth
 
 adguardvpn-cli config set-update-channel "$ADGUARD_UPDATE_CHANNEL"
