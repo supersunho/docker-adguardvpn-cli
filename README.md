@@ -26,6 +26,10 @@
 
 <!-- PROJECT LOGO -->
 <br />
+
+> [!WARNING]
+> We're currently experiencing auto login issues. After running the container, please manually authenticate through the link that appears in the output and wait a moment - it should work normally after that. Just a heads up again that the automatic login flow isn't working properly at the moment. (2026-01-13)
+
 <div align="center">
   <!-- <a href="https://github.com/supersunho/docker-adguardvpn-cli">
     <img src="images/logo.png" alt="Logo" width="80" height="80">
