@@ -21,8 +21,27 @@ REAL_IP="ERROR"
 # Get IP before VPN if kill switch is enabled
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log "📡 Getting current IP..."
-    IP_CMD="dig +short txt ch whoami.cloudflare @1.1.1.1 | tr -d '\"'"
-    REAL_IP=$(eval "$IP_CMD" 2>/dev/null | head -n1 | tr -d '\n\r ')
+    
+    # Detect connection mode for appropriate IP detection method
+    local_connection_mode="${ADGUARD_CONNECTION_TYPE,,}"
+    
+    if [ "$local_connection_mode" = "socks" ]; then
+        # For SOCKS mode, use direct IP detection before VPN connection
+        # since SOCKS proxy isn't available yet
+        log "📡 SOCKS mode detected - using direct IP detection before VPN connection"
+        REAL_IP=$(get_public_ip_direct 2>/dev/null) || REAL_IP="ERROR"
+    else
+        # For TUN mode, use normal IP detection function
+        # Use the robust IP detection function from utils.sh with error handling
+        REAL_IP=$(get_public_ip 2>/dev/null) || REAL_IP="ERROR"
+    fi
+    
+    # Validate that we got a valid IP address
+    if [ "$REAL_IP" = "ERROR" ] || [ -z "$REAL_IP" ]; then
+        log "🚨 Failed to get current IP address before VPN connection!"
+        log "🚨 Please ensure network connectivity before starting VPN with kill switch"
+        exit 1
+    fi
 fi
 
 # =============================================================================

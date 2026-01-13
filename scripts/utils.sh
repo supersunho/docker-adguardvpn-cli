@@ -227,6 +227,66 @@ get_public_ip() {
     fi
 }
 
+# Direct IP detection function for use before VPN connection in SOCKS mode
+get_public_ip_direct() {
+    local http_ip=""
+    local http_method=""
+    
+    local http_services=(
+        "AWS|https://checkip.amazonaws.com"
+        "IPify|https://api.ipify.org"
+        "IPinfo|https://ipinfo.io/ip"
+        "ifconfig.co|https://ifconfig.co"
+        "icanhazip|https://icanhazip.com"
+        "ident.me|https://ident.me"
+        "DNS-O-Matic|https://myip.dnsomatic.com"
+        "ifconfig.me|https://ifconfig.me/ip"
+    )
+    
+    shuffle_array() {
+        local -n arr=$1
+        local i tmp size rand
+        size=${#arr[*]}
+        for (( i=size-1; i>0; i-- )); do
+            rand=$((RANDOM % (i+1)))
+            tmp=${arr[i]}; arr[i]=${arr[rand]}; arr[rand]=$tmp
+        done
+    }
+    
+    # HTTP Method Detection without SOCKS proxy
+    # log "🌐 HTTP: Discovering reliable method (direct connection)..." >&2
+    shuffle_array http_services
+    
+    for service in "${http_services[@]}"; do
+        IFS='|' read -r name url <<< "$service"
+        # log "🔍 HTTP: Testing $name [direct]" >&2
+        
+        local curl_cmd=$(get_http_command "$name")
+        local ip=$(eval "$curl_cmd" 2>/dev/null | head -n1 | tr -d '\n\r ')
+        
+        if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            http_ip="$ip"
+            http_method="$name"
+            # log "✅ HTTP: $name -> $ip" >&2
+            break
+        else
+            # log "❌ HTTP: $name failed" >&2
+            continue
+        fi
+    done
+    
+    if [ -n "$http_ip" ]; then
+        # log "🌐 Direct IP detection successful: $http_ip" >&2
+        echo "$http_ip"
+        return 0
+    else
+        log "🚨 All direct IP detection methods failed!" >&2
+        log "🔌 Check network connectivity" >&2
+        echo "ERROR"
+        return 1
+    fi
+}
+
 # Helper functions to reconstruct commands
 get_dns_command() {
     case "$1" in
