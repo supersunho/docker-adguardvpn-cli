@@ -4,6 +4,8 @@ services:
         image: supersunho/adguardvpn-cli:latest
         restart: unless-stopped
         container_name: adguard-vpn-cli
+        hostname: adguard-vpn-cli
+        mac_address: "02:42:ac:11:00:02" # Choose a fixed, unique MAC address
         env_file: .env
         volumes:
             - ./data:/root/.local/share/adguardvpn-cli
