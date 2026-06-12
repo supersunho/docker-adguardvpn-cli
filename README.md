@@ -19,10 +19,8 @@
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
 
-[![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
 
 <!-- PROJECT LOGO -->
 <br />
@@ -59,7 +57,7 @@
 
 This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
 > **Authentication Change Notice**: As of version 1.5.10, AdGuard VPN CLI has transitioned from username/password authentication to web-based authentication. The old `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` environment variables are no longer used for authentication, but are kept for backward compatibility in configuration.
 
 <!--
@@ -85,11 +83,10 @@ Before proceeding, please review the following content and create your .env file
 
 ### Authentication Setup
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
 > **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication instead of username/password. You need to perform an initial authentication using the web flow before the VPN can connect.
 
 1. **First-time Setup**:
-
     - Start the main container: `docker-compose up -d`
     - Check the logs to find the authentication link: `docker logs adguard-vpn-cli`
     - **When running adguardvpn-cli for the first time, check the docker logs for the authentication link. Once you access the link and complete the authentication, you won't need to authenticate again for subsequent runs. The link format looks like `https://auth.adguard.io/device_code?user_code=xxxx`.**
@@ -174,14 +171,15 @@ services:
 | ADGUARD_TELEMETRY                      | Set whether to send anonymized usage data to developers                                                                                          | false         | true / false             |
 | ADGUARD_TUN_ROUTING_MODE               | Set VPN tunnel routing mode                                                                                                                      | "AUTO"        | AUTO / SCRIPT / NONE     |
 | ADGUARD_BOUND_IF_OVERRIDE              | Override network interface to use for outbound VPN traffic (pass "" to disable)                                                                  | ""            | interface name or ""     |
-| ADGUARD_MAX_LEAK_TOLERANCE            | Termination on first leak (0 = immediate termination on first leak)                                                                              | 0             |                          |
-| ADGUARD_LEAK_WARNING_ONLY             | When a leak, only an warning (true = warning only, false = terminate)                                                                            | false         | true / false             |
-| ADGUARD_MAX_IP_DETECTION_RETRIES      | Maximum number of IP detection attempts                                                                                                          | 3             | number                   |
-| ADGUARD_IP_DETECTION_RETRY_DELAY      | IP detection retry delay Seconds                                                                                                                 | 10            | number                   |
+| ADGUARD_MAX_LEAK_TOLERANCE             | Termination on first leak (0 = immediate termination on first leak)                                                                              | 0             |                          |
+| ADGUARD_LEAK_WARNING_ONLY              | When a leak, only an warning (true = warning only, false = terminate)                                                                            | false         | true / false             |
+| ADGUARD_MAX_IP_DETECTION_RETRIES       | Maximum number of IP detection attempts                                                                                                          | 3             | number                   |
+| ADGUARD_IP_DETECTION_RETRY_DELAY       | IP detection retry delay Seconds                                                                                                                 | 10            | number                   |
 | ✨ADGUARD_AUTO_UPDATE                  | Update AdGuard VPN CLI on container startup                                                                                                      | false         | true / false             |
 | ✨ADGUARD_CUSTOM_DNS                   | Set the DNS upstream server                                                                                                                      | "1.1.1.1"     |                          |
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
+>
 > - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
 > - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
 > - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
@@ -285,7 +283,7 @@ Please check the location and add the city, country or ISO code to `ADGUARD_CONN
 
 ## References
 
--   [AdguardTeam/AdGuardVPNCLI](https://github.com/AdguardTeam/AdGuardVPNCLI)
+- [AdguardTeam/AdGuardVPNCLI](https://github.com/AdguardTeam/AdGuardVPNCLI)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
