@@ -17,6 +17,7 @@ export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-true}
 export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
 
 # Additional configuration options
+export ADGUARD_AUTO_UPDATE=${ADGUARD_AUTO_UPDATE:-false}
 export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
 export ADGUARD_SHOW_HINTS=${ADGUARD_SHOW_HINTS:-"on"}
 export ADGUARD_DEBUG_LOGGING=${ADGUARD_DEBUG_LOGGING:-"on"}
@@ -36,8 +37,10 @@ else
     adguardvpn-cli login
 fi
 
-# log "Updating Adguard VPN CLI..."
-# adguardvpn-cli update -y
+if [ "${ADGUARD_AUTO_UPDATE,,}" = "true" ]; then
+    log "Updating Adguard VPN CLI..."
+    adguardvpn-cli update -y
+fi
 
 log "Configuring Adguard VPN..."
 adguardvpn-cli config set-mode "${ADGUARD_CONNECTION_TYPE,,}" 
