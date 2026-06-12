@@ -182,6 +182,8 @@ services:
 
 > [!IMPORTANT] 
 > - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
+> - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
 > - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
 > - **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 

@@ -13,7 +13,8 @@ export ADGUARD_SOCKS5_HOST=${ADGUARD_SOCKS5_HOST:-"127.0.0.1"}
 export ADGUARD_SOCKS5_PORT=${ADGUARD_SOCKS5_PORT:-1080}
 export ADGUARD_SEND_REPORTS=${ADGUARD_SEND_REPORTS:-false}
 export ADGUARD_SET_SYSTEM_DNS=${ADGUARD_SET_SYSTEM_DNS:-false}
-export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-"1.1.1.1"}
+export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-true}
+export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
 
 # Additional configuration options
 export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
@@ -56,7 +57,7 @@ else
     adguardvpn-cli config set-bound-if-override ""
 fi
 
-if [ "${ADGUARD_USE_CUSTOM_DNS,,}" = true ]; then
+if [ "${ADGUARD_USE_CUSTOM_DNS,,}" = "true" ]; then
     adguardvpn-cli config set-dns "$ADGUARD_CUSTOM_DNS"
 fi
 
