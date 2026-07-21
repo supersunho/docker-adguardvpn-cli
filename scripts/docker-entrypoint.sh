@@ -88,7 +88,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     # Validate IP detection
     if [ "$REAL_IP" = "ERROR" ]; then
         log "🚨 Failed to get IP address!"
-        kill $TAIL_PID 2>/dev/null
+        kill "${TAIL_PID}" 2>/dev/null
         exit 1
     fi
     
@@ -97,7 +97,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     # Check if kill switch script exists
     if [ ! -f /opt/adguardvpn_cli/scripts/killswitch.sh ]; then
         log "🚨 Kill switch script not found!"
-        kill $TAIL_PID 2>/dev/null
+        kill "${TAIL_PID}" 2>/dev/null
         exit 1
     fi
     
@@ -112,9 +112,9 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     KILL_PID=$!
     
     # Validate kill switch started
-    if ! kill -0 $KILL_PID 2>/dev/null; then
+    if ! kill -0 "${KILL_PID}" 2>/dev/null; then
         log "🚨 Kill switch failed to start!"
-        kill $TAIL_PID 2>/dev/null
+        kill "${TAIL_PID}" 2>/dev/null
         exit 1
     fi
     
@@ -123,9 +123,9 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     # Wait for stability
     sleep 5
     
-    if ! kill -0 $KILL_PID 2>/dev/null; then
+    if ! kill -0 "${KILL_PID}" 2>/dev/null; then
         log "🚨 Kill switch died within 5 seconds!"
-        kill $TAIL_PID 2>/dev/null
+        kill "${TAIL_PID}" 2>/dev/null
         exit 1
     fi
     
@@ -136,7 +136,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     # =========================================================================
     
     # Simple monitoring loop
-    while kill -0 $KILL_PID 2>/dev/null; do
+    while kill -0 "${KILL_PID}" 2>/dev/null; do
         sleep 60  # Check every minute
         log "💓 Kill switch running..."
     done
@@ -145,7 +145,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log "🛑 Kill switch terminated - Container shutting down"
     
     # Cleanup and exit
-    kill $TAIL_PID 2>/dev/null
+    kill "${TAIL_PID}" 2>/dev/null
     exit 1
     
 else
@@ -157,7 +157,7 @@ else
     log "ℹ️ Container will continue even if VPN fails"
     
     # Keep container alive with log monitoring only
-    wait $TAIL_PID
+    wait "${TAIL_PID}"
 fi
 
 # =============================================================================
@@ -167,7 +167,7 @@ fi
 log "🛑 Container shutting down..."
 
 # Cleanup
-[ -n "$TAIL_PID" ] && kill $TAIL_PID 2>/dev/null
+[ -n "$TAIL_PID" ] && kill "${TAIL_PID}" 2>/dev/null
 
 log "✅ Container exited (code: $INIT_EXIT_CODE)"
 exit $INIT_EXIT_CODE
