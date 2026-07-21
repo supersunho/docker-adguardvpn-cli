@@ -75,6 +75,20 @@ This project allows you to use AdguardVPN-CLI within a Docker container. It prov
 
 Before proceeding, please review the following content and create your .env file accordingly. You can refer to the .env.example file provided in this repository for guidance.
 
+### Data Directory Ownership
+
+The container runs as a non-root user with UID/GID `1001:1001`. Before first run, ensure the local `data` directory has the correct ownership:
+
+```bash
+mkdir -p data
+sudo chown -R 1001:1001 data
+cp .env.example .env
+docker compose up -d
+```
+
+> [!IMPORTANT]
+> The published Docker image uses a fixed UID/GID of `1001:1001` for the `appuser`. Changing `PUID` and `PGID` in `.env` does **not** remap the runtime user. These are build-time arguments only — use them only when building a custom image. If the `data` directory is not writable, the container will exit immediately with a `chown` hint.
+
 ### Authentication Setup
 
 > [!IMPORTANT]
@@ -108,9 +122,6 @@ services:
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
-        environment:
-            - PUID=${PUID:-1001}
-            - PGID=${PGID:-1001}
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
@@ -179,8 +190,8 @@ services:
 | ADGUARD_TUN_ROUTING_MODE               | TUN routing mode                                                                                                                                 | AUTO          | AUTO / TUN_ONLY / PROXY_ONLY|
 | ADGUARD_BOUND_IF_OVERRIDE              | Override bound network interface (empty = auto)                                                                                                  |               | Interface name or empty     |
 | ADGUARD_LOG_LEVEL                      | Container log level                                                                                                                              | INFO          | DEBUG / INFO / WARN / ERROR |
-| PUID                                   | User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu user at 1000)                                    | 1001          | Positive integer            |
-| PGID                                   | Group ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu group at 1000)                                  | 1001          | Positive integer            |
+| PUID                                   | **[Build-time only]** User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu user at 1000)              | 1001          | Positive integer (build arg)|
+| PGID                                   | **[Build-time only]** Group ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu group at 1000)            | 1001          | Positive integer (build arg)|
 
 > [!IMPORTANT]
 >
