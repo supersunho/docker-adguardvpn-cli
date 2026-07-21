@@ -16,8 +16,10 @@ _LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
 
 # Source each module in dependency order.
 # logging.sh must come first since other modules use log().
+# error_handling.sh should be early since it provides die/try/retry.
 for _module in \
     logging.sh \
+    error_handling.sh \
     network.sh \
     ip_detection.sh \
     vpn_status.sh \
