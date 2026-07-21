@@ -62,32 +62,42 @@ _oauth_login() {
     log INFO "=============================================="
     log INFO ""
 
-    # Run login.  In a non-TTY environment (Docker) the command
-    # will print the URL and then poll until authentication succeeds
-    # or the user completes the flow.
+    # Run login in background, writing to a temp file.
     #
-    # We tee the output so it appears in the container logs in
-    # real time while we also capture it for URL detection.
+    # NOTE: We deliberately avoid a pipeline (cmd | tee ... &) because
+    # $! would then capture tee's PID, not adguardvpn-cli login's PID,
+    # making wait / kill / timeout operate on the wrong process.
+    #
+    # Instead we background adguardvpn-cli directly and use a separate
+    # tail -f to relay output to the log in real time.
 
     local temp_file
     temp_file="$(mktemp /tmp/adguard-login-XXXXXX 2>/dev/null)" || temp_file="/tmp/adguard-login-$$"
 
-    # Run in background, tee output to both the log and the temp file
-    adguardvpn-cli login 2>&1 | tee "$temp_file" &
+    # Background the actual login command — $! is its real PID
+    adguardvpn-cli login > "$temp_file" 2>&1 &
     local login_pid=$!
 
-    # Wait a moment for initial output, then check for URL
-    sleep 3 &
+    # Relay output in real time to the container log
+    tail -f "$temp_file" 2>/dev/null &
+    local tail_pid=$!
 
-    # Wait for the process with a timeout (so the trap works)
+    # Wait for initial output, then check for URL
+    sleep 3 &
+    wait $! 2>/dev/null || true
+
     local timeout=1800  # 30 minutes max for auth
     local elapsed=0
+    local url_printed=false
 
+    # Monitor the login process (not tail — its PID is tracked separately)
     while kill -0 "$login_pid" 2>/dev/null; do
-        # Check for device code URL in captured output
-        if grep -qE 'https://auth\.adguard\.io/device_code' "$temp_file" 2>/dev/null; then
+        # Check for device code URL in captured output (one time only)
+        if [ "$url_printed" = false ] && \
+           grep -qE 'https://auth\.adguard\.io/device_code' "$temp_file" 2>/dev/null; then
             local device_url
-            device_url=$(grep -oE 'https://auth\.adguard\.io/device_code\?user_code=[A-Z0-9-]+' "$temp_file" 2>/dev/null | head -1)
+            device_url=$(grep -oE 'https://auth\.adguard\.io/device_code\?user_code=[A-Z0-9-]+' \
+                         "$temp_file" 2>/dev/null | head -1)
 
             log INFO ""
             log INFO "=============================================="
@@ -101,12 +111,11 @@ _oauth_login() {
             log INFO "=============================================="
             log INFO ""
 
-            # URL already printed; don't repeat
-            > "$temp_file" 2>/dev/null || true
+            url_printed=true
         fi
 
         sleep 5 &
-        wait $!
+        wait $! 2>/dev/null || true
         elapsed=$((elapsed + 5))
 
         if [ "$elapsed" -ge "$timeout" ]; then
@@ -116,16 +125,20 @@ _oauth_login() {
         fi
     done
 
+    # Stop the relay tail process
+    kill "$tail_pid" 2>/dev/null || true
+    wait "$tail_pid" 2>/dev/null || true
+
     rm -f "$temp_file" 2>/dev/null || true
 
-    # Check return status
-    # wait returns the exit code of the child process;
-    # do NOT use || true here or we lose the error code.
+    # Collect the actual exit code of adguardvpn-cli login
     wait "$login_pid" 2>/dev/null
     local login_exit=$?
 
+    # Exit 143 = SIGTERM from our timeout, which is acceptable
+    # Any other non-zero exit = actual failure
     if [ "$login_exit" -ne 0 ] && [ "$login_exit" -ne 143 ]; then
-        log ERROR "adguardvpn-cli login failed (exit: ${login_exit})"
+        log ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
         return 1
     fi
 
