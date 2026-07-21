@@ -647,7 +647,8 @@ jobs:
             - name: 📝 Generate release notes
               id: release-notes
               run: |
-                  PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p' 2>/dev/null || git rev-list --max-parents=0 HEAD)
+                  CURRENT_TAG="${{ needs.prepare.outputs.release_tag }}"
+                  PREV_TAG=$(git tag --merged HEAD --sort=-v:refname | awk -v current_tag="$CURRENT_TAG" '$0 != current_tag { print; exit }')
                   if [ -z "$PREV_TAG" ]; then
                     echo "🔍 No previous tag found, using initial commit"
                     PREV_TAG=$(git rev-list --max-parents=0 HEAD)
@@ -737,6 +738,7 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.release_tag }}
+                  target_commitish: ${{ github.sha }}
                   name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.release_tag }}"
                   body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/digest-*.txt
