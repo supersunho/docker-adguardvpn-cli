@@ -161,6 +161,10 @@ _config_define_schema() {
         "enum" "INFO" \
         "Log level filter: DEBUG, INFO, WARN, ERROR" \
         "DEBUG,INFO,WARN,ERROR"
+
+    _config_add "ADGUARD_MAX_WAIT_TIME" \
+        "positive_int" "60" \
+        "Maximum wait time in seconds for the AdGuard VPN log file to appear"
 }
 
 # ---- Internal helpers -------------------------------------------------------

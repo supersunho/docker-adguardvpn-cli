@@ -30,14 +30,38 @@ _cleanup_and_exit() {
         wait "${KILL_PID}" 2>/dev/null || true
     fi
 
+    if [ -n "${SUPERVISE_PID:-}" ]; then
+        kill "${SUPERVISE_PID}" 2>/dev/null || true
+        wait "${SUPERVISE_PID}" 2>/dev/null || true
+    fi
+
     exit "$exit_code"
 }
 
+# shellcheck disable=SC2329  # invoked via trap TERM/INT
 _shutdown_handler() {
     _cleanup_and_exit 0
 }
 
 trap _shutdown_handler TERM INT
+
+# =============================================================================
+# VPN Supervisor (used when kill switch is disabled)
+# =============================================================================
+
+# Keep the container alive by periodically checking VPN status.
+# Runs in the background so the container stays up even when
+# ADGUARD_SHOW_LOG=false and ADGUARD_USE_KILL_SWITCH=false.
+supervise_vpn() {
+    while true; do
+        if ! adguardvpn-cli status >/dev/null 2>&1; then
+            log ERROR "VPN status check failed — supervisor exiting"
+            return 1
+        fi
+        sleep 60 &
+        wait "$!"
+    done
+}
 
 # =============================================================================
 # Configuration Setup (bootstrapped above)
@@ -128,10 +152,18 @@ log INFO "VPN connected successfully"
 
 log INFO "Waiting for AdGuard VPN log file..."
 
+_LOG_WAIT_MAX="${ADGUARD_MAX_WAIT_TIME:-60}"
+_LOG_WAITED=0
 while [ ! -f "$LOG_FILE" ]; do
+    if [ "$_LOG_WAITED" -ge "$_LOG_WAIT_MAX" ]; then
+        log WARN "Log file did not appear within ${_LOG_WAIT_MAX}s — continuing without log tail"
+        break
+    fi
     sleep 1 &
     wait $!
+    _LOG_WAITED=$((_LOG_WAITED + 1))
 done
+unset _LOG_WAIT_MAX _LOG_WAITED
 
 log INFO "Log file ready"
 
@@ -191,7 +223,19 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
 
 else
     log WARN "Kill Switch DISABLED — container will continue even if VPN fails"
-    log INFO "Monitoring AdGuard VPN log only"
 
-    [ -n "${TAIL_PID:-}" ] && wait "${TAIL_PID}" || true
+    # Start VPN supervisor in background to keep container alive
+    supervise_vpn &
+    SUPERVISE_PID=$!
+    log INFO "VPN supervisor started (PID: ${SUPERVISE_PID})"
+
+    # Also wait for log tail if it was started
+    if [ -n "${TAIL_PID:-}" ]; then
+        wait "${TAIL_PID}" 2>/dev/null || true
+    fi
+
+    # Block on supervisor (returns when VPN status check fails)
+    wait "${SUPERVISE_PID}" 2>/dev/null || true
+    log WARN "VPN supervisor exited — container shutting down"
+    _cleanup_and_exit 1
 fi
