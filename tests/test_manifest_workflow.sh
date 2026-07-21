@@ -10,6 +10,7 @@ set -euo pipefail
 #   - Digest upload is unconditional
 #   - Verification steps use set -euo pipefail
 #   - No || echo failure patterns in verification steps
+#   - Pre-release manifests preserve the full version and skip latest
 #
 # Usage:  bash tests/test_manifest_workflow.sh
 
@@ -194,6 +195,39 @@ test_merge_fails_on_missing_arch() {
 }
 
 # =============================================================================
+# Test 11: Manifest version preserves pre-release suffix
+# =============================================================================
+
+test_manifest_uses_full_build_version() {
+    if grep -q "VERSION=\"\${{ needs.prepare.outputs.build_version_tag }}\"" "$WORKFLOW" && \
+       grep -q "ARCH_IMAGES+=(\"\${PREFIX}:\${VERSION}-\${arch}\")" "$WORKFLOW"; then
+        echo "  PASS: Version manifests use the full project version"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Manifest creation does not use the full project version"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 12: Latest manifest is conditional
+# =============================================================================
+
+test_latest_manifest_is_conditional() {
+    local merge_block
+    merge_block=$(sed -n '/Create multi-arch manifests/,/^    # 4)/p' "$WORKFLOW" 2>/dev/null || true)
+
+    if echo "$merge_block" | grep -q 'PUBLISH_LATEST' && \
+       echo "$merge_block" | grep -q 'Skipping latest manifest for pre-release'; then
+        echo "  PASS: Latest manifest is skipped for pre-releases"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Latest manifest is created unconditionally"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -221,6 +255,10 @@ echo ""
 test_digest_export_handles_both_paths
 echo ""
 test_merge_fails_on_missing_arch
+echo ""
+test_manifest_uses_full_build_version
+echo ""
+test_latest_manifest_is_conditional
 echo ""
 
 echo "=========================================="

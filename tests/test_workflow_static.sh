@@ -7,6 +7,8 @@ set -euo pipefail
 #   - No direct ${{ inputs.* }} interpolation in shell blocks
 #   - Inputs pass through env: before shell usage
 #   - Version validation exists
+#   - Project and upstream versions remain independent
+#   - Pre-release tags cannot update stable/latest aliases
 #   - Output paths are quoted
 #
 # Usage:  bash tests/test_workflow_static.sh
@@ -52,7 +54,7 @@ test_inputs_use_env_block() {
     env_inputs=$(grep -c 'env:' "$workflow" 2>/dev/null || echo 0)
 
     # Check that specific inputs appear in env blocks
-    for input in source_version build_version force_rebuild; do
+    for input in source_version build_version prerelease force_rebuild; do
         if grep -q "$input" <<< "$(grep -A1 'env:' "$workflow" 2>/dev/null)"; then
             : # ok
         elif grep -q "\${{ inputs.$input" "$workflow" 2>/dev/null; then
@@ -66,6 +68,102 @@ test_inputs_use_env_block() {
 
     echo "  PASS: Inputs use env: block or non-shell contexts"
     PASS=$((PASS + 1))
+}
+
+# =============================================================================
+# Test 6: Project version is required and independent from upstream version
+# =============================================================================
+
+test_project_version_is_independent() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local build_input
+    build_input=$(sed -n '/^            build_version:/,/^            [a-z_].*:/p' "$workflow" | head -5)
+
+    if echo "$build_input" | grep -q 'required: true' && \
+       grep -q 'build_version is required and must be independent' "$workflow" && \
+       grep -q "BUILD_VERSION=\"\$BUILD_VERSION_INPUT\"" "$workflow" && \
+       ! grep -q "BUILD_VERSION=\"\$SOURCE_VERSION\"" "$workflow"; then
+        echo "  PASS: Project build version is required and independent from source version"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Workflow still allows project version to fall back to source version"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 7: Pre-release version and release state are propagated
+# =============================================================================
+
+test_prerelease_metadata_is_propagated() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+
+    if grep -q 'type: boolean' "$workflow" && \
+       grep -q 'PRERELEASE_INPUT' "$workflow" && \
+       grep -q 'build_version_tag:.*steps.get-version.outputs.build_version_tag' "$workflow" && \
+       grep -q 'release_tag:.*steps.get-version.outputs.release_tag' "$workflow" && \
+       grep -q 'prerelease:.*needs.prepare.outputs.prerelease' "$workflow"; then
+        echo "  PASS: Pre-release metadata reaches image and GitHub Release steps"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Pre-release metadata is not propagated through the workflow"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 8: Full pre-release suffix is preserved in image tags
+# =============================================================================
+
+test_prerelease_suffix_is_preserved() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+
+    if grep -q "BUILD_VERSION_TAG=\"\$BUILD_VERSION_CLEAN\"" "$workflow" && \
+       grep -q 'needs.prepare.outputs.build_version_tag' "$workflow" && \
+       grep -q "RELEASE_TAG=\"v\${BUILD_VERSION_TAG}\"" "$workflow"; then
+        echo "  PASS: Pre-release suffix is preserved in image and release tags"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Workflow strips the pre-release suffix from the published version"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 9: Stable/latest aliases are guarded for pre-releases
+# =============================================================================
+
+test_latest_alias_is_guarded() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+
+    if grep -q 'Prepare image tags' "$workflow" && \
+       grep -q "if \[ \"\$PUBLISH_LATEST\" = \"true\" \]" "$workflow" && \
+       grep -q 'Skipping latest manifest for pre-release' "$workflow"; then
+        echo "  PASS: Pre-releases cannot publish stable/latest aliases"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Stable/latest alias publishing is not guarded"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 10: Release assets are downloaded before GitHub Release creation
+# =============================================================================
+
+test_release_downloads_digest_artifacts() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local release_block
+    release_block=$(sed -n '/create-release:/,$p' "$workflow")
+
+    if echo "$release_block" | grep -q 'actions/download-artifact@v4' && \
+       echo "$release_block" | grep -q 'files: /tmp/digests/\*/digest.txt'; then
+        echo "  PASS: Release job downloads digest assets before publishing"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Release assets are not available to the GitHub Release job"
+        FAIL=$((FAIL + 1))
+    fi
 }
 
 # =============================================================================
@@ -139,6 +237,16 @@ echo ""
 test_rejects_shell_metacharacters
 echo ""
 test_github_output_is_quoted
+echo ""
+test_project_version_is_independent
+echo ""
+test_prerelease_metadata_is_propagated
+echo ""
+test_prerelease_suffix_is_preserved
+echo ""
+test_latest_alias_is_guarded
+echo ""
+test_release_downloads_digest_artifacts
 echo ""
 
 echo "=========================================="

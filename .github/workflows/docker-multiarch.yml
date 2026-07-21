@@ -21,10 +21,15 @@ on:
                 type: string
 
             build_version:
-                description: "Custom build version tag (optional - will use source version if empty)"
-                required: false
-                default: ""
+                description: "Project image and release version (e.g., 2.0.0-beta.1)"
+                required: true
                 type: string
+
+            prerelease:
+                description: "Mark the GitHub Release as a pre-release and suppress stable/latest tags"
+                required: false
+                default: false
+                type: boolean
 
             verify_build:
                 description: "Verify build functionality"
@@ -67,7 +72,8 @@ jobs:
         runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
         env:
             SOURCE_VERSION_INPUT: ${{ inputs.source_version || 'latest' }}
-            BUILD_VERSION_INPUT: ${{ inputs.build_version || '' }}
+            BUILD_VERSION_INPUT: ${{ inputs.build_version }}
+            PRERELEASE_INPUT: ${{ inputs.prerelease || false }}
             FORCE_REBUILD_INPUT: ${{ inputs.force_rebuild || 'false' }}
         outputs:
             source_version: ${{ steps.get-version.outputs.source_version }}
@@ -76,7 +82,11 @@ jobs:
             source_version_exact: ${{ steps.get-version.outputs.source_version_exact }}
             build_version: ${{ steps.get-version.outputs.build_version }}
             build_version_clean: ${{ steps.get-version.outputs.build_version_clean }}
+            build_version_tag: ${{ steps.get-version.outputs.build_version_tag }}
             build_version_base: ${{ steps.get-version.outputs.build_version_base }}
+            prerelease: ${{ steps.get-version.outputs.prerelease }}
+            publish_latest: ${{ steps.get-version.outputs.publish_latest }}
+            release_tag: ${{ steps.get-version.outputs.release_tag }}
             matrix: ${{ steps.generate-matrix.outputs.matrix }}
 
         steps:
@@ -84,7 +94,8 @@ jobs:
               id: get-version
               env:
                 SOURCE_VERSION_INPUT: ${{ inputs.source_version || 'latest' }}
-                BUILD_VERSION_INPUT: ${{ inputs.build_version || '' }}
+                BUILD_VERSION_INPUT: ${{ inputs.build_version }}
+                PRERELEASE_INPUT: ${{ inputs.prerelease || false }}
               run: |
                   # Validate version inputs — accept "latest" or semver with optional v prefix
                   validate_version() {
@@ -104,6 +115,20 @@ jobs:
                       fi
                   }
 
+                  if [ -z "$BUILD_VERSION_INPUT" ]; then
+                      echo "ERROR: build_version is required and must be independent from source_version" >&2
+                      exit 1
+                  fi
+
+                  PRERELEASE_INPUT="${PRERELEASE_INPUT,,}"
+                  case "$PRERELEASE_INPUT" in
+                      true|false) ;;
+                      *)
+                          echo "ERROR: prerelease must be true or false" >&2
+                          exit 1
+                          ;;
+                  esac
+
                   validate_version "source_version" "$SOURCE_VERSION_INPUT"
                   validate_version "build_version" "$BUILD_VERSION_INPUT"
 
@@ -118,20 +143,33 @@ jobs:
                     echo "📌 Using specified source version: $SOURCE_VERSION"
                   fi
 
-                  # Step 2: Determine build version
-                  if [ -n "$BUILD_VERSION_INPUT" ]; then
-                    BUILD_VERSION="$BUILD_VERSION_INPUT"
-                    echo "🏷️ Using custom build version: $BUILD_VERSION"
-                  else
-                    BUILD_VERSION="$SOURCE_VERSION"
-                    echo "🏷️ Using source version as build version: $BUILD_VERSION"
-                  fi
+                  # Step 2: Determine the independent project build version
+                  BUILD_VERSION="$BUILD_VERSION_INPUT"
+                  echo "🏷️ Using project build version: $BUILD_VERSION"
 
                   # Step 3: Process version strings for Docker tags
                   SOURCE_VERSION_CLEAN=${SOURCE_VERSION#v}
                   BUILD_VERSION_CLEAN=${BUILD_VERSION#v}
+                  BUILD_VERSION_TAG="$BUILD_VERSION_CLEAN"
                   SOURCE_VERSION_BASE=${SOURCE_VERSION_CLEAN%%-*}
                   BUILD_VERSION_BASE=${BUILD_VERSION_CLEAN%%-*}
+
+                  if [ "$PRERELEASE_INPUT" = "true" ] && [[ "$BUILD_VERSION_TAG" != *-* ]]; then
+                    echo "ERROR: prerelease=true requires a pre-release build_version such as 2.0.0-beta.1" >&2
+                    exit 1
+                  fi
+                  if [ "$PRERELEASE_INPUT" = "false" ] && [[ "$BUILD_VERSION_TAG" == *-* ]]; then
+                    echo "ERROR: prerelease=false cannot use a pre-release build_version: $BUILD_VERSION_TAG" >&2
+                    exit 1
+                  fi
+
+                  if [ "$PRERELEASE_INPUT" = "true" ]; then
+                    PUBLISH_LATEST=false
+                  else
+                    PUBLISH_LATEST=true
+                  fi
+
+                  RELEASE_TAG="v${BUILD_VERSION_TAG}"
 
                   # source_version_exact is the tag to install and verify
                   SOURCE_VERSION_EXACT="$SOURCE_VERSION"
@@ -139,9 +177,11 @@ jobs:
                   echo ""
                   echo "📋 Version Summary:"
                   echo "├─ 🎯 AdGuard CLI Source    : $SOURCE_VERSION ($SOURCE_VERSION_CLEAN)"
-                  echo "├─ 🏷️ Build/Release Tag     : $BUILD_VERSION ($BUILD_VERSION_CLEAN)"
+                  echo "├─ 🏷️ Build/Release Tag     : $RELEASE_TAG"
                   echo "├─ 🔧 Source Base Version   : $SOURCE_VERSION_BASE"
-                  echo "└─ 🚀 Build Base Version    : $BUILD_VERSION_BASE"
+                  echo "├─ 🚀 Build Version         : $BUILD_VERSION_TAG"
+                  echo "├─ 🧪 Pre-release           : $PRERELEASE_INPUT"
+                  echo "└─ 🏷️ Publish latest        : $PUBLISH_LATEST"
                   echo ""
 
                   printf '%s\n' \
@@ -151,7 +191,11 @@ jobs:
                     "source_version_exact=$SOURCE_VERSION_EXACT" \
                     "build_version=$BUILD_VERSION" \
                     "build_version_clean=$BUILD_VERSION_CLEAN" \
+                    "build_version_tag=$BUILD_VERSION_TAG" \
                     "build_version_base=$BUILD_VERSION_BASE" \
+                    "prerelease=$PRERELEASE_INPUT" \
+                    "publish_latest=$PUBLISH_LATEST" \
+                    "release_tag=$RELEASE_TAG" \
                     >> "$GITHUB_OUTPUT"
 
             - name: 🏗️ Generate build matrix
@@ -190,8 +234,9 @@ jobs:
             - name: 🎯 Display build target information
               run: |
                   echo "🎯 Building AdGuard VPN CLI container for: ${{ matrix.platform }}"
-                  echo "📦 AdGuard CLI Source: ${{ needs.prepare.outputs.source_version_base }}"
-                  echo "🏷️ Build Tag: ${{ needs.prepare.outputs.build_version_base }}"
+                  echo "📦 AdGuard CLI Source: ${{ needs.prepare.outputs.source_version }}"
+                  echo "🏷️ Build Tag: ${{ needs.prepare.outputs.build_version_tag }}"
+                  echo "🧪 Pre-release: ${{ needs.prepare.outputs.prerelease }}"
                   echo "🏗️ Architecture: ${{ matrix.arch }}"
                   echo "📦 Platform: ${{ matrix.platform }}"
 
@@ -201,7 +246,7 @@ jobs:
                 FORCE_REBUILD_INPUT: ${{ inputs.force_rebuild || 'false' }}
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                  IMAGE_TAG="${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
+                  IMAGE_TAG="${{ needs.prepare.outputs.build_version_tag }}-${{ matrix.arch }}"
                   echo "🔍 Checking if image exists: $IMAGE_TAG"
 
                   if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$FORCE_REBUILD_INPUT" = "true" ]; then
@@ -230,6 +275,27 @@ jobs:
                     echo "❌ Image $IMAGE_TAG not found in GHCR, proceeding with build"
                     echo "build_image=true" >> "$GITHUB_OUTPUT"
                   fi
+
+            - name: 🏷️ Prepare image tags
+              id: image-tags
+              if: steps.check-images.outputs.build_image == 'true'
+              env:
+                IMAGE_VERSION: ${{ needs.prepare.outputs.build_version_tag }}
+                PUBLISH_LATEST: ${{ needs.prepare.outputs.publish_latest }}
+                GHCR_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_REPO }}
+                ARCH: ${{ matrix.arch }}
+              run: |
+                  {
+                    echo 'tags<<EOF'
+                    echo "${GHCR_IMAGE}:${IMAGE_VERSION}-${ARCH}"
+                    echo "${DOCKERHUB_IMAGE}:${IMAGE_VERSION}-${ARCH}"
+                    if [ "$PUBLISH_LATEST" = "true" ]; then
+                      echo "${GHCR_IMAGE}:latest-${ARCH}"
+                      echo "${DOCKERHUB_IMAGE}:latest-${ARCH}"
+                    fi
+                    echo 'EOF'
+                  } >> "$GITHUB_OUTPUT"
 
             - name: 📥 Checkout repository
               if: steps.check-images.outputs.build_image == 'true'
@@ -276,7 +342,7 @@ jobs:
                   path: |
                       /tmp/apt-cache
                       /tmp/apt-lib
-                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
+                  key: ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_tag }}
                   restore-keys: |
                       ${{ env.CACHE_VERSION }}-adguard-cache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-
 
@@ -290,16 +356,12 @@ jobs:
                   push: true
                   no-cache: ${{ github.event.inputs.clear_cache == 'true' }}
                   cache-from: |
-                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
+                      type=gha,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_tag }}
                   cache-to: |
-                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
+                      type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_tag }}
                   build-args: |
                       AGCLI_VERSION=${{ needs.prepare.outputs.source_version_exact }}
-                  tags: |
-                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}
-                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
-                      ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}
-                      ${{ env.DOCKERHUB_REPO }}:latest-${{ matrix.arch }}
+                  tags: ${{ steps.image-tags.outputs.tags }}
                   provenance: false
 
             - name: 🧪 Comprehensive container verification
@@ -307,7 +369,7 @@ jobs:
               run: |
                   set -euo pipefail
 
-                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
+                  IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_tag }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
                   echo "📋 Test 1: Binary Verification"
@@ -335,7 +397,7 @@ jobs:
                   else
                     # Skip path: resolve the existing image digest from the registry
                     echo "🔍 Resolving existing image digest for ${{ matrix.arch }}..."
-                    IMAGE_TAG="${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
+                    IMAGE_TAG="${{ needs.prepare.outputs.build_version_tag }}-${{ matrix.arch }}"
                     IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
                     DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
                     if [ -n "$DIGEST" ]; then
@@ -399,7 +461,8 @@ jobs:
               run: |
                   # shellcheck disable=SC2086,SC2296
                   set -euo pipefail
-                  VERSION="${{ needs.prepare.outputs.build_version_base }}"
+                  VERSION="${{ needs.prepare.outputs.build_version_tag }}"
+                  PUBLISH_LATEST="${{ needs.prepare.outputs.publish_latest }}"
                   echo "📦 Creating multi-arch manifests for version: $VERSION"
 
                   # Verify all three required architectures have digests
@@ -435,11 +498,9 @@ jobs:
                     fi
 
                     ARCH_IMAGES=()
-                    LATEST_ARCH_IMAGES=()
 
                     for arch in "${REQUIRED_ARCHS[@]}"; do
                       ARCH_IMAGES+=("${PREFIX}:${VERSION}-${arch}")
-                      LATEST_ARCH_IMAGES+=("${PREFIX}:latest-${arch}")
                     done
 
                     echo "🏗️ Creating version manifest: ${PREFIX}:${VERSION}"
@@ -447,10 +508,19 @@ jobs:
                       --tag "${PREFIX}:${VERSION}" \
                       "${ARCH_IMAGES[@]}"
 
-                    echo "🏗️ Creating latest manifest: ${PREFIX}:latest"
-                    docker buildx imagetools create \
-                      --tag "${PREFIX}:latest" \
-                      "${LATEST_ARCH_IMAGES[@]}"
+                    if [ "$PUBLISH_LATEST" = "true" ]; then
+                      LATEST_ARCH_IMAGES=()
+                      for arch in "${REQUIRED_ARCHS[@]}"; do
+                        LATEST_ARCH_IMAGES+=("${PREFIX}:latest-${arch}")
+                      done
+
+                      echo "🏗️ Creating latest manifest: ${PREFIX}:latest"
+                      docker buildx imagetools create \
+                        --tag "${PREFIX}:latest" \
+                        "${LATEST_ARCH_IMAGES[@]}"
+                    else
+                      echo "⏭️ Skipping latest manifest for pre-release"
+                    fi
 
                     echo "✅ Multi-arch manifests created for $registry"
                   done
@@ -482,13 +552,27 @@ jobs:
 
                   BUILD_COUNT=$(find /tmp/digests -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
                   BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
+                  IMAGE_VERSION="${{ needs.prepare.outputs.build_version_tag }}"
+                  PUBLISH_LATEST="${{ needs.prepare.outputs.publish_latest }}"
+                  GHCR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+                  DOCKERHUB_IMAGE="${{ env.DOCKERHUB_REPO }}"
+
+                  DOCKERHUB_PULL_COMMANDS="docker pull ${DOCKERHUB_IMAGE}:${IMAGE_VERSION}"
+                  GHCR_PULL_COMMANDS="docker pull ${GHCR_IMAGE}:${IMAGE_VERSION}"
+                  if [ "$PUBLISH_LATEST" = "true" ]; then
+                    DOCKERHUB_PULL_COMMANDS="${DOCKERHUB_PULL_COMMANDS}
+                  docker pull ${DOCKERHUB_IMAGE}:latest"
+                    GHCR_PULL_COMMANDS="${GHCR_PULL_COMMANDS}
+                  docker pull ${GHCR_IMAGE}:latest"
+                  fi
 
                   cat >> "$GITHUB_STEP_SUMMARY" << MJEOF
                   # 🚀 AdGuard VPN CLI Multi-Architecture Build Summary
 
                   **Build Date**: $BUILD_DATE
-                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}
-                  **Build/Release Tag**: ${{ needs.prepare.outputs.build_version_base }}
+                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version }}
+                  **Build/Release Tag**: ${{ needs.prepare.outputs.build_version_tag }}
+                  **Pre-release**: ${{ needs.prepare.outputs.prerelease }}
                   **Source Release Tag**: ${{ needs.prepare.outputs.source_version }}
                   **Build Number**: #${{ github.run_number }}
                   **Repository**: [${{ github.repository }}](https://github.com/${{ github.repository }})
@@ -507,14 +591,12 @@ jobs:
 
                   #### 🎯 Docker Hub - Smart Architecture Detection
                   \`\`\`
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest
-                  docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}
+                  ${DOCKERHUB_PULL_COMMANDS}
                   \`\`\`
 
                   #### 🔄 GitHub Container Registry (GHCR) - Smart Architecture Detection
                   \`\`\`
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}
+                  ${GHCR_PULL_COMMANDS}
                   \`\`\`
 
                   **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**
@@ -537,6 +619,13 @@ jobs:
               uses: actions/checkout@v4
               with:
                   fetch-depth: 0
+
+            - name: 📥 Download digest artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: /tmp/digests
+                  pattern: digests-*
+                  merge-multiple: false
 
             - name: 🕐 Set current date
               run: echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
@@ -589,8 +678,9 @@ jobs:
                   RELEASE_NOTES="${RELEASE_NOTES}
 
                   **Build Date**: ${{ env.BUILD_DATE }}
-                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}
-                  **Build/Release Version**: ${{ needs.prepare.outputs.build_version_base }}
+                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version }}
+                  **Build/Release Version**: ${{ needs.prepare.outputs.build_version_tag }}
+                  **Pre-release**: ${{ needs.prepare.outputs.prerelease }}
 
                   ## 📋 Changelog
                   "
@@ -632,11 +722,11 @@ jobs:
             - name: 🏷️ Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
-                  tag_name: ${{ needs.prepare.outputs.build_version }}-build-${{ github.run_number }}
-                  name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.build_version }} (Build #${{ github.run_number }})"
+                  tag_name: ${{ needs.prepare.outputs.release_tag }}
+                  name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.release_tag }}"
                   body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/*/digest.txt
                   draft: false
-                  prerelease: false
+                  prerelease: ${{ needs.prepare.outputs.prerelease }}
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
