@@ -51,7 +51,13 @@ RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
     echo "🔍 Verifying installed version..." && \
     INSTALLED_VERSION=$(adguardvpn-cli --version 2>/dev/null | head -1) && \
     echo "📋 Installed: ${INSTALLED_VERSION}" && \
-    echo "✅ AdGuard VPN CLI installation and version check completed"
+    REQUESTED_CLEAN=$(printf '%s' "${ACTUAL_VERSION}" | sed 's/^v//') && \
+    INSTALLED_CLEAN=$(printf '%s' "${INSTALLED_VERSION}" | sed -nE 's/.*v([0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?).*/\1/p') && \
+    if [ "${REQUESTED_CLEAN}" != "${INSTALLED_CLEAN}" ]; then \
+        echo "❌ Version mismatch: requested ${ACTUAL_VERSION}, installed ${INSTALLED_VERSION}" >&2; \
+        exit 1; \
+    fi && \
+    echo "✅ AdGuard VPN CLI ${ACTUAL_VERSION} verified successfully"
 
 # Create non-root user with configurable UID/GID
 RUN groupadd -g ${PGID} appuser && \
