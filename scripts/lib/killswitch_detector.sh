@@ -18,7 +18,7 @@
 # Configuration (from environment or defaults)
 # =============================================================================
 
-readonly KS_MAX_WAIT_TIME="${ADGUARD_MAX_WAIT_TIME:-20}"
+readonly KS_MAX_WAIT_TIME="${ADGUARD_MAX_WAIT_TIME:-60}"
 readonly KS_CHECK_INTERVAL="${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-15}"
 readonly KS_MAX_LEAK_TOLERANCE="${ADGUARD_MAX_LEAK_TOLERANCE:-0}"
 readonly KS_LEAK_WARNING_ONLY="${ADGUARD_LEAK_WARNING_ONLY:-false}"
@@ -106,8 +106,8 @@ ks_detect_initial_ip() {
 
 # Wait for the VPN tunnel to become active.
 # Polls every 2 seconds up to KS_MAX_WAIT_TIME seconds.
-# After VPN status reports "Connected", does 3 fast retries (1s apart)
-# to give the tunnel time to propagate before the standard poll cycle.
+# Every 5 seconds during the wait, logs a progress message so the user
+# can see the kill switch is actively waiting for the tunnel.
 # Usage: ks_wait_for_vpn_tunnel
 # Returns: 0 if tunnel is active, 1 on timeout
 ks_wait_for_vpn_tunnel() {
@@ -117,26 +117,21 @@ ks_wait_for_vpn_tunnel() {
 
     while [ "$elapsed" -lt "$KS_MAX_WAIT_TIME" ]; do
         if check_adguard_vpn_status; then
-            # VPN says connected. Do fast retries (1s apart) to let the tunnel
-            # propagate — the tunnel IP may not be visible via HTTP immediately.
+            # Tunnel says connected -- verify IP has changed
+            # Uses ks_detect_ip_consistent to lock the detection method on first success
             local temp_ip
-            local fast_retries=3
-            for ((i=0; i<fast_retries; i++)); do
-                # Uses ks_detect_ip_consistent to lock the detection method
-                # on first successful call
-                temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
-                if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ] && \
-                   [ "$temp_ip" != "$KS_REAL_IP" ]; then
-                    log INFO "VPN tunnel active, IP changed to ${temp_ip}"
-                    KS_VPN_IP="$temp_ip"
-                    return 0
-                fi
-                if [ "$i" -lt "$((fast_retries - 1))" ]; then
-                    sleep 1
-                    elapsed=$((elapsed + 1))
-                fi
-            done
-            log DEBUG "VPN connected but tunnel not ready yet..."
+            temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
+            if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ] && \
+               [ "$temp_ip" != "$KS_REAL_IP" ]; then
+                log INFO "VPN tunnel active, IP changed to ${temp_ip}"
+                KS_VPN_IP="$temp_ip"
+                return 0
+            fi
+
+            # Show progress every 5s so the user knows we're waiting
+            if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
+                log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
+            fi
         else
             log DEBUG "VPN not connected yet..."
         fi
