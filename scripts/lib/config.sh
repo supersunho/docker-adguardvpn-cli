@@ -115,11 +115,6 @@ _config_define_schema() {
         "Show CLI usage hints (on/off)" \
         "on,off"
 
-    _config_add "ADGUARD_DEBUG_LOGGING" \
-        "enum" "on" \
-        "Enable debug logging in AdGuard CLI (on/off)" \
-        "on,off"
-
     _config_add "ADGUARD_SHOW_NOTIFICATIONS" \
         "enum" "on" \
         "Show desktop notifications (on/off)" \
@@ -154,14 +149,18 @@ _config_define_schema() {
         "Group ID for the container's app user (default avoids conflict with Ubuntu built-in ubuntu group at 1000)"
 
     # ---------- Logging ----------
-    _config_add "ADGUARD_LOG_LEVEL" \
-        "enum" "INFO" \
-        "Container log level: DEBUG, INFO, WARN, ERROR" \
-        "DEBUG,INFO,WARN,ERROR"
+    _config_add "ADGUARD_SHOW_LOG" \
+        "bool" "true" \
+        "Master switch for container log output (false = silent, except critical messages like OAuth URL)"
 
-    _config_add "ADGUARD_DEV_MODE" \
-        "bool" "false" \
-        "Enable development mode: verbose logging and raw AdGuard CLI output"
+    _config_add "ADGUARD_SHOW_SUMMARY" \
+        "bool" "true" \
+        "Show kill switch periodic summary in container logs"
+
+    _config_add "ADGUARD_SHOW_LOG_LEVEL" \
+        "enum" "INFO" \
+        "Log level filter: DEBUG, INFO, WARN, ERROR" \
+        "DEBUG,INFO,WARN,ERROR"
 }
 
 # ---- Internal helpers -------------------------------------------------------

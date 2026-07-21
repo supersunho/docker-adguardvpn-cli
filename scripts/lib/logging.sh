@@ -3,7 +3,7 @@
 # AdGuard VPN -- Logging utilities
 #
 # Provides leveled logging with ISO-8601 timestamps. All output is in English.
-# Supports DEBUG, INFO, WARN, ERROR levels, controlled by ADGUARD_LOG_LEVEL.
+# Supports DEBUG, INFO, WARN, ERROR levels, controlled by ADGUARD_SHOW_LOG_LEVEL.
 #
 # Usage:
 #   source /opt/adguardvpn_cli/scripts/lib/logging.sh
@@ -11,7 +11,7 @@
 #   log DEBUG "IP detection attempt 1/3"
 #   log ERROR "VPN connection failed"
 #
-# Default level is INFO when ADGUARD_LOG_LEVEL is unset or empty.
+# Default level is INFO when ADGUARD_SHOW_LOG_LEVEL is unset or empty.
 
 # =============================================================================
 # Configuration
@@ -55,7 +55,7 @@ _log_real() {
     level_upper="$(echo "$level" | tr '[:lower:]' '[:upper:]')"
 
     # Get effective log level from environment
-    local configured_level="${ADGUARD_LOG_LEVEL:-INFO}"
+    local configured_level="${ADGUARD_SHOW_LOG_LEVEL:-INFO}"
 
     # Check if this message should be shown
     local msg_num
@@ -65,6 +65,11 @@ _log_real() {
 
     if [ "$msg_num" -lt "$cfg_num" ]; then
         return 0  # Message level too low, skip
+    fi
+
+    # ADGUARD_SHOW_LOG=false suppresses all container output
+    if [ "${ADGUARD_SHOW_LOG:-true}" = "false" ]; then
+        return 0  # Log output disabled
     fi
 
     # Build timestamp
@@ -109,3 +114,24 @@ log_info()  { log INFO  "$@"; }
 log_warn()  { log WARN  "$@"; }
 log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
+
+# Force-print a message, bypassing ADGUARD_SHOW_LOG.
+# Use ONLY for critical output that must always be visible (e.g. OAuth URL).
+# Usage: log_force <level> <message>
+log_force() {
+    local level="${1:-INFO}"
+    local message="${2:-}"
+    shift 2 2>/dev/null || true
+    [ $# -gt 0 ] && message="$*"
+
+    local level_upper
+    level_upper="$(echo "$level" | tr '[:lower:]' '[:upper:]')"
+
+    local timestamp
+    timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo '0000-00-00T00:00:00Z')"
+
+    local caller_name
+    caller_name="$(basename "${BASH_SOURCE[2]:-$0}" .sh 2>/dev/null || echo 'unknown')"
+
+    echo "[${timestamp}] [${level_upper}] [${caller_name}] ${message}" >&2
+}

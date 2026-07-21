@@ -46,6 +46,9 @@ trap _shutdown_handler TERM INT
 
 export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
 export ADGUARD_CONNECTION_TYPE=${ADGUARD_CONNECTION_TYPE:-TUN}
+export ADGUARD_SHOW_LOG="${ADGUARD_SHOW_LOG:-true}"
+export ADGUARD_SHOW_SUMMARY="${ADGUARD_SHOW_SUMMARY:-true}"
+export ADGUARD_SHOW_LOG_LEVEL="${ADGUARD_SHOW_LOG_LEVEL:-INFO}"
 
 log INFO "AdGuard VPN Container Starting"
 log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
@@ -139,23 +142,16 @@ done
 
 log INFO "Log file ready"
 
-# In production mode (ADGUARD_DEV_MODE=false), suppress AdGuard CLI debug logging
-# and only show kill switch status. Dev mode shows everything for troubleshooting.
-export ADGUARD_DEV_MODE="${ADGUARD_DEV_MODE:-false}"
-if [ "${ADGUARD_DEV_MODE,,}" = "true" ]; then
-    export ADGUARD_LOG_LEVEL="${ADGUARD_LOG_LEVEL:-DEBUG}"
-    log INFO "DEV MODE: verbose logging enabled"
-
-    # Start background log monitoring (raw AdGuard CLI output)
-    tail -F "$LOG_FILE" &
-    TAIL_PID=$!
-else
-    export ADGUARD_LOG_LEVEL="${ADGUARD_LOG_LEVEL:-INFO}"
-    log INFO "Production mode: showing kill switch status only"
-
-    # In production, filter AdGuard CLI log to show only important messages
-    tail -F "$LOG_FILE" | grep --line-buffered -v -i -E '(debug|trace)' 2>/dev/null &
-    TAIL_PID=$!
+# Log file tail: when SHOW_LOG is true, relay AdGuard CLI log to container output.
+# DEBUG level shows raw output; INFO/WARN/ERROR suppress debug/trace noise.
+if [ "${ADGUARD_SHOW_LOG:-true}" = "true" ]; then
+    if [ "${ADGUARD_SHOW_LOG_LEVEL:-INFO}" = "DEBUG" ]; then
+        tail -F "$LOG_FILE" &
+        TAIL_PID=$!
+    else
+        tail -F "$LOG_FILE" | grep --line-buffered -v -i -E '(debug|trace)' 2>/dev/null &
+        TAIL_PID=$!
+    fi
 fi
 
 # =============================================================================

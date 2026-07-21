@@ -24,13 +24,14 @@ export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
 export ADGUARD_AUTO_UPDATE=${ADGUARD_AUTO_UPDATE:-false}
 export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
 export ADGUARD_SHOW_HINTS=${ADGUARD_SHOW_HINTS:-"on"}
-export ADGUARD_DEBUG_LOGGING=${ADGUARD_DEBUG_LOGGING:-"on"}
 export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
 
-# In production mode (ADGUARD_DEV_MODE=false), suppress AdGuard CLI debug logging
-# for clean output. Debug logs are only shown in development mode.
-if [ "${ADGUARD_DEV_MODE,,}" != "true" ]; then
-    ADGUARD_DEBUG_LOGGING="off"
+# Derive ADGUARD_DEBUG_LOGGING from SHOW_LOG_LEVEL (internal, not user-set).
+# When SHOW_LOG_LEVEL=DEBUG, enable AdGuard CLI debug logging.
+if [ "${ADGUARD_SHOW_LOG_LEVEL:-INFO}" = "DEBUG" ]; then
+    export ADGUARD_DEBUG_LOGGING="on"
+else
+    export ADGUARD_DEBUG_LOGGING="off"
 fi
 export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
 export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
@@ -51,22 +52,22 @@ AUTH_FILE="${HOME}/.local/share/adguardvpn-cli/vpn.pid"
 # Docker container without a TTY it prints the device code URL and then
 # periodically polls the auth server until the user completes login.
 _oauth_login() {
-    log INFO ""
-    log INFO "=============================================="
-    log INFO "      WEB AUTHENTICATION REQUIRED"
-    log INFO "=============================================="
-    log INFO ""
-    log INFO "AdGuard VPN requires browser-based authentication."
-    log INFO ""
-    log INFO "The login command below will display a URL."
-    log INFO "Open that URL in your browser, complete the"
-    log INFO "authentication, and the process will continue"
-    log INFO "automatically."
-    log INFO ""
-    log INFO "NOTE: ADGUARD_USERNAME/ADGUARD_PASSWORD are no"
-    log INFO "longer used. Please authenticate via the URL."
-    log INFO "=============================================="
-    log INFO ""
+    log_force INFO ""
+    log_force INFO "=============================================="
+    log_force INFO "      WEB AUTHENTICATION REQUIRED"
+    log_force INFO "=============================================="
+    log_force INFO ""
+    log_force INFO "AdGuard VPN requires browser-based authentication."
+    log_force INFO ""
+    log_force INFO "The login command below will display a URL."
+    log_force INFO "Open that URL in your browser, complete the"
+    log_force INFO "authentication, and the process will continue"
+    log_force INFO "automatically."
+    log_force INFO ""
+    log_force INFO "NOTE: ADGUARD_USERNAME/ADGUARD_PASSWORD are no"
+    log_force INFO "longer used. Please authenticate via the URL."
+    log_force INFO "=============================================="
+    log_force INFO ""
 
     # Run login in background, writing to a temp file.
     #
@@ -106,17 +107,17 @@ _oauth_login() {
             device_url=$(grep -oE 'https://auth\.adguard\.io/device_code\?user_code=[A-Z0-9-]+' \
                          "$temp_file" 2>/dev/null | head -1)
 
-            log INFO ""
-            log INFO "=============================================="
-            log INFO "  OPEN THIS LINK IN YOUR BROWSER:"
-            log INFO ""
-            log INFO "  ${device_url}"
-            log INFO ""
-            log INFO "  Authenticate in your browser, then wait here."
-            log INFO "  The container will detect the login"
-            log INFO "  automatically and continue."
-            log INFO "=============================================="
-            log INFO ""
+            log_force INFO ""
+            log_force INFO "=============================================="
+            log_force INFO "  OPEN THIS LINK IN YOUR BROWSER:"
+            log_force INFO ""
+            log_force INFO "  ${device_url}"
+            log_force INFO ""
+            log_force INFO "  Authenticate in your browser, then wait here."
+            log_force INFO "  The container will detect the login"
+            log_force INFO "  automatically and continue."
+            log_force INFO "=============================================="
+            log_force INFO ""
 
             url_printed=true
         fi
@@ -127,7 +128,7 @@ _oauth_login() {
 
         if [ "$elapsed" -ge "$timeout" ]; then
             timed_out=true
-            log WARN "Login timed out after ${timeout}s — user did not authenticate in time"
+            log_force WARN "Login timed out after ${timeout}s — user did not authenticate in time"
             kill "$login_pid" 2>/dev/null || true
             break
         fi
@@ -147,17 +148,17 @@ _oauth_login() {
 
     # Timeout from our own SIGTERM — user never authenticated
     if [ "$timed_out" = true ]; then
-        log ERROR "Authentication timed out after ${timeout}s"
+        log_force ERROR "Authentication timed out after ${timeout}s"
         return 1
     fi
 
     # The process exited on its own — check its exit code
     if [ "$login_exit" -ne 0 ]; then
-        log ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
+        log_force ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
         return 1
     fi
 
-    log INFO "Authentication completed successfully"
+    log_force INFO "Authentication completed successfully"
     return 0
 }
 
