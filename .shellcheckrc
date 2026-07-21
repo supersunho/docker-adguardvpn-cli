@@ -1,0 +1,16 @@
+# ShellCheck configuration for AdGuard VPN CLI
+# See: https://www.shellcheck.net/wiki/
+
+# Only enable error-level checks during CI (warnings are advisory)
+severity=error
+
+# Source path for external resources
+source-path=SCRIPTDIR
+
+# Allow following sourced files via shellcheck source=
+external-sources=true
+
+# Disable warnings we intentionally use
+disable=SC1091  # Not following sourced file (dynamic paths are OK at runtime)
+disable=SC2034  # Variable appears unused (used by callers via source)
+disable=SC2154  # Variable is referenced but not assigned (sourced from lib modules)
