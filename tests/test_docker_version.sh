@@ -4,7 +4,7 @@ set -euo pipefail
 # Test: Docker version pinning
 #
 # Structural tests that validate the Dockerfile consumes AGCLI_VERSION
-# and verifies the installed version.
+# and verifies the installed package version.
 #
 # Full Docker integration tests (build + version check) require
 # a Docker daemon and are marked accordingly.
@@ -68,7 +68,41 @@ test_dockerfile_verifies_version() {
 }
 
 # =============================================================================
-# Test 4: Workflow passes exact version to Docker build-args
+# Test 4: Dockerfile overrides the installer's stale built-in version
+# =============================================================================
+
+test_dockerfile_passes_package_version_to_installer() {
+    local dockerfile="${PROJECT_DIR}/Dockerfile"
+
+    if grep -q -F "install.sh -v -a y -V \"\$PACKAGE_VERSION\"" "$dockerfile" && \
+       grep -q -F "PACKAGE_VERSION=\"\${SOURCE_VERSION%-release}\"" "$dockerfile"; then
+        echo "  PASS: Dockerfile passes the release package version explicitly"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile relies on the installer's stale default version"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 5: Dockerfile parses the actual version line
+# =============================================================================
+
+test_dockerfile_parses_version_line() {
+    local dockerfile="${PROJECT_DIR}/Dockerfile"
+
+    if grep -q 'AdGuard VPN CLI (v?' "$dockerfile" && \
+       grep -q 'Could not parse installed AdGuard VPN CLI version' "$dockerfile"; then
+        echo "  PASS: Dockerfile parses and validates the actual version line"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile version parsing is vulnerable to CLI preamble output"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 6: Workflow passes exact version to Docker build-args
 # =============================================================================
 
 test_workflow_passes_exact_version() {
@@ -97,6 +131,10 @@ echo ""
 test_dockerfile_uses_agcli_version
 echo ""
 test_dockerfile_verifies_version
+echo ""
+test_dockerfile_passes_package_version_to_installer
+echo ""
+test_dockerfile_parses_version_line
 echo ""
 test_workflow_passes_exact_version
 echo ""

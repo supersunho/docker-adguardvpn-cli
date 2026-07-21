@@ -31,33 +31,42 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     update-ca-certificates && \
     echo "✅ CA certificates updated"
 
-# Download and install AdGuard VPN CLI
+# Download and install AdGuard VPN CLI.
 # When AGCLI_VERSION is "latest", fetch the latest release tag from GitHub.
-# Otherwise, use the exact version specified (with or without 'v' prefix).
+# Otherwise, use the exact upstream release tag specified by the caller.
+#
+# The upstream installer has a built-in default package version that can lag
+# behind the release tag. Always pass the package version explicitly instead
+# of relying on that stale default.
 RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
         echo "🔍 Fetching latest AdGuard VPN CLI release..." && \
-        ACTUAL_VERSION=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r .tag_name) && \
+        ACTUAL_VERSION=$(curl -fsSL https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r '.tag_name // empty') && \
         echo "📦 Latest version: ${ACTUAL_VERSION}"; \
     else \
         ACTUAL_VERSION="${AGCLI_VERSION}"; \
         echo "📦 Using specified version: ${ACTUAL_VERSION}"; \
     fi && \
     [ -n "$ACTUAL_VERSION" ] || { echo "ERROR: Could not determine version"; exit 1; } && \
+    SOURCE_VERSION="${ACTUAL_VERSION#v}" && \
+    PACKAGE_VERSION="${SOURCE_VERSION%-release}" && \
+    [ -n "$PACKAGE_VERSION" ] || { echo "ERROR: Could not determine package version"; exit 1; } && \
     echo "⬇️  Downloading AdGuard VPN CLI ${ACTUAL_VERSION}..." && \
     curl -fsSL -o /tmp/install.sh \
         "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/${ACTUAL_VERSION}/scripts/release/install.sh" && \
-    USER=root sh /tmp/install.sh -v -a y && \
+    USER=root sh /tmp/install.sh -v -a y -V "$PACKAGE_VERSION" && \
     rm /tmp/install.sh && \
     echo "🔍 Verifying installed version..." && \
-    INSTALLED_VERSION=$(adguardvpn-cli --version 2>/dev/null | head -1) && \
+    INSTALLED_VERSION=$(adguardvpn-cli --version 2>&1 | \
+        sed -nE 's/.*AdGuard VPN CLI (v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?).*/\1/p' | \
+        head -n 1) && \
     echo "📋 Installed: ${INSTALLED_VERSION}" && \
-    REQUESTED_CLEAN=$(printf '%s' "${ACTUAL_VERSION}" | sed 's/^v//') && \
-    INSTALLED_CLEAN=$(printf '%s' "${INSTALLED_VERSION}" | sed -nE 's/.*v([0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?).*/\1/p') && \
-    if [ "${REQUESTED_CLEAN}" != "${INSTALLED_CLEAN}" ]; then \
-        echo "❌ Version mismatch: requested ${ACTUAL_VERSION}, installed ${INSTALLED_VERSION}" >&2; \
+    [ -n "${INSTALLED_VERSION}" ] || { echo "❌ Could not parse installed AdGuard VPN CLI version" >&2; exit 1; } && \
+    INSTALLED_CLEAN="${INSTALLED_VERSION#v}" && \
+    if [ "${PACKAGE_VERSION}" != "${INSTALLED_CLEAN}" ]; then \
+        echo "❌ Version mismatch: requested package ${PACKAGE_VERSION}, installed ${INSTALLED_VERSION}" >&2; \
         exit 1; \
     fi && \
-    echo "✅ AdGuard VPN CLI ${ACTUAL_VERSION} verified successfully"
+    echo "✅ AdGuard VPN CLI ${INSTALLED_VERSION} verified for source tag ${ACTUAL_VERSION}"
 
 # Create non-root user with configurable UID/GID
 RUN groupadd -g ${PGID} appuser && \

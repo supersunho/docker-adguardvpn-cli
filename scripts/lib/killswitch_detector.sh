@@ -40,10 +40,15 @@ KS_LOCKED_HTTP_ID=""
 # Usage: ip=$(ks_detect_ip_consistent)
 # Returns: IP on stdout, or "ERROR" on failure
 ks_detect_ip_consistent() {
+    local use_socks5=false
+    if is_socks_mode; then
+        use_socks5=true
+    fi
+
     if [ -n "$KS_LOCKED_HTTP_ID" ]; then
         # Locked — use the same method every time
         local ip
-        ip=$(_ip_run_http_method "$KS_LOCKED_HTTP_ID" 2>/dev/null)
+        ip=$(_ip_run_http_method "$KS_LOCKED_HTTP_ID" "$use_socks5" 2>/dev/null) || ip=""
         if _is_valid_ipv4 "$ip"; then
             echo "$ip"
             return 0
@@ -56,7 +61,7 @@ ks_detect_ip_consistent() {
     # First call — discover a working HTTP method in fixed order (no shuffle).
     for id in "${_IP_HTTP_SERVICES[@]}"; do
         local ip
-        ip=$(_ip_run_http_method "$id" 2>/dev/null)
+        ip=$(_ip_run_http_method "$id" "$use_socks5" 2>/dev/null) || ip=""
         if _is_valid_ipv4 "$ip"; then
             KS_LOCKED_HTTP_ID="$id"
             log INFO "IP detection locked to HTTP method ${id} — IP: ${ip}"

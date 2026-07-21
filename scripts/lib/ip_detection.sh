@@ -25,6 +25,7 @@ _IP_HTTP_SERVICES=("aws" "ipify" "ipinfo")
 # Detection tracking (set by _ip_detect_* functions, consumed by caller)
 _IP_LAST_DNS_ID=""
 _IP_LAST_HTTP_ID=""
+_IP_DETECTED_IP=""
 
 # =============================================================================
 # IP address validation
@@ -88,6 +89,7 @@ _ip_run_http_method() {
 # Sets: _IP_LAST_DNS_ID to the successful method ID
 _ip_detect_dns() {
     local id ip
+    _IP_DETECTED_IP=""
 
     if is_socks_mode; then
         return 0  # DNS not available in SOCKS mode
@@ -104,7 +106,7 @@ _ip_detect_dns() {
     for id in "${methods[@]}"; do
         log DEBUG "DNS: testing ${id}"
 
-        ip=$(_ip_run_dns_method "$id")
+        ip=$(_ip_run_dns_method "$id") || ip=""
         if ! _is_valid_ipv4 "$ip"; then
             # Strip quotes for TXT-record results (Cloudflare, Google)
             ip=$(echo "$ip" | tr -d '"')
@@ -112,6 +114,7 @@ _ip_detect_dns() {
 
         if _is_valid_ipv4 "$ip"; then
             _IP_LAST_DNS_ID="$id"
+            _IP_DETECTED_IP="$ip"
             log DEBUG "DNS: ${id} -> ${ip}"
             echo "$ip"
             return 0
@@ -130,6 +133,7 @@ _ip_detect_dns() {
 _ip_detect_http() {
     local use_socks5="${1:-false}"
     local id ip
+    _IP_DETECTED_IP=""
 
     local -a services=("${_IP_HTTP_SERVICES[@]}")
     shuffle_array services
@@ -137,10 +141,11 @@ _ip_detect_http() {
     for id in "${services[@]}"; do
         log DEBUG "HTTP: testing ${id} $([ "$use_socks5" = true ] && echo '[via SOCKS5]' || echo '[direct]')"
 
-        ip=$(_ip_run_http_method "$id" "$use_socks5")
+        ip=$(_ip_run_http_method "$id" "$use_socks5") || ip=""
 
         if _is_valid_ipv4 "$ip"; then
             _IP_LAST_HTTP_ID="$id"
+            _IP_DETECTED_IP="$ip"
             log DEBUG "HTTP: ${id} -> ${ip}"
             echo "$ip"
             return 0
@@ -160,24 +165,38 @@ _ip_detect_http() {
 
 _IP_METHOD_FILE="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
 
-# Usage: _ip_save_method <type> <id>
-#   type: "dns" or "http"
-#   id:   allowlisted method ID (e.g. opendns, aws)
-_ip_save_method() {
-    local type="$1" id="$2"
+# Usage: _ip_save_methods <dns_id> <http_id>
+#   dns_id:  allowlisted DNS method ID, or empty
+#   http_id: allowlisted HTTP method ID, or empty
+_ip_save_methods() {
+    local dns_id="${1:-}" http_id="${2:-}"
     local dir
     dir="$(dirname "$_IP_METHOD_FILE")"
 
-    mkdir -p "$dir" 2>/dev/null || true
+    mkdir -p "$dir" 2>/dev/null || return 1
+    chmod 700 "$dir" 2>/dev/null || return 1
 
     # Atomic write: mktemp in the same directory, write, chmod 600, then mv
+    umask 077
     local tmpfile
     tmpfile="$(mktemp "${dir}/ip_method.XXXXXX" 2>/dev/null)" || return 1
 
-    umask 077
-    printf 'v1|%s|%s\n' "$type" "$id" > "$tmpfile"
-    chmod 600 "$tmpfile"
-    mv -f "$tmpfile" "$_IP_METHOD_FILE"
+    {
+        if [ -n "$dns_id" ]; then
+            printf 'v1|dns|%s\n' "$dns_id"
+        fi
+        if [ -n "$http_id" ]; then
+            printf 'v1|http|%s\n' "$http_id"
+        fi
+    } > "$tmpfile" || {
+        rm -f "$tmpfile"
+        return 1
+    }
+
+    if ! chmod 600 "$tmpfile" || ! mv -f "$tmpfile" "$_IP_METHOD_FILE"; then
+        rm -f "$tmpfile"
+        return 1
+    fi
 }
 
 # Load saved method IDs.
@@ -238,7 +257,7 @@ get_public_ip() {
 
     # --- DNS detection --------------------------------------------------------
     if [ -n "$saved_dns" ] && [ "$use_socks5" = false ]; then
-        dns_ip=$(_ip_run_dns_method "$saved_dns" 2>/dev/null)
+        dns_ip=$(_ip_run_dns_method "$saved_dns" 2>/dev/null) || dns_ip=""
         if _is_valid_ipv4 "$dns_ip"; then
             _IP_LAST_DNS_ID="$saved_dns"
             log DEBUG "DNS: reused saved method ${saved_dns} -> ${dns_ip}"
@@ -248,12 +267,13 @@ get_public_ip() {
     fi
 
     if [ -z "$dns_ip" ] && [ "$use_socks5" = false ]; then
-        dns_ip=$(_ip_detect_dns)
+        _ip_detect_dns >/dev/null
+        dns_ip="$_IP_DETECTED_IP"
     fi
 
     # --- HTTP detection -------------------------------------------------------
     if [ -n "$saved_http" ]; then
-        http_ip=$(_ip_run_http_method "$saved_http" "$use_socks5" 2>/dev/null)
+        http_ip=$(_ip_run_http_method "$saved_http" "$use_socks5" 2>/dev/null) || http_ip=""
         if _is_valid_ipv4 "$http_ip"; then
             _IP_LAST_HTTP_ID="$saved_http"
             log DEBUG "HTTP: reused saved method ${saved_http} -> ${http_ip}"
@@ -263,7 +283,8 @@ get_public_ip() {
     fi
 
     if [ -z "$http_ip" ]; then
-        http_ip=$(_ip_detect_http "$use_socks5")
+        _ip_detect_http "$use_socks5" >/dev/null
+        http_ip="$_IP_DETECTED_IP"
     fi
 
     # --- Result reconciliation ------------------------------------------------
@@ -272,27 +293,31 @@ get_public_ip() {
     if [ -n "$dns_ip" ] && [ -n "$http_ip" ]; then
         if [ "$dns_ip" = "$http_ip" ]; then
             # Consistent -- save both methods that succeeded
-            [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
-            [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
+            _ip_save_methods "$_IP_LAST_DNS_ID" "$_IP_LAST_HTTP_ID" || \
+                log WARN "Could not persist IP detection methods"
             echo "$dns_ip"
             return 0
         else
             # Mismatch -- prefer HTTP in SOCKS mode, DNS in TUN mode
             if [ "$use_socks5" = true ]; then
-                [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
+                _ip_save_methods "" "$_IP_LAST_HTTP_ID" || \
+                    log WARN "Could not persist IP detection method"
                 echo "$http_ip"
             else
-                [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
+                _ip_save_methods "$_IP_LAST_DNS_ID" "" || \
+                    log WARN "Could not persist IP detection method"
                 echo "$dns_ip"
             fi
             return 0
         fi
     elif [ -n "$dns_ip" ]; then
-        [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
+        _ip_save_methods "$_IP_LAST_DNS_ID" "" || \
+            log WARN "Could not persist IP detection method"
         echo "$dns_ip"
         return 0
     elif [ -n "$http_ip" ]; then
-        [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
+        _ip_save_methods "" "$_IP_LAST_HTTP_ID" || \
+            log WARN "Could not persist IP detection method"
         echo "$http_ip"
         return 0
     fi
@@ -320,7 +345,8 @@ get_public_ip() {
 # Returns: IP address on stdout, or "ERROR" on failure
 get_public_ip_direct() {
     local ip
-    ip=$(_ip_detect_http false)
+    _ip_detect_http false >/dev/null
+    ip="$_IP_DETECTED_IP"
 
     if [ -n "$ip" ]; then
         log DEBUG "Direct IP detection: ${ip}"

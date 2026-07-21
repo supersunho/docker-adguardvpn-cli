@@ -51,14 +51,14 @@ test_dispatch_functions_defined() {
 }
 
 # =============================================================================
-# Test 3: _ip_save_method writes v1|type|id format
+# Test 3: _ip_save_methods writes v1|type|id format
 # =============================================================================
 
 test_save_method_writes_v1_format() {
     local cache="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
     rm -f "$cache"
 
-    _ip_save_method "dns" "opendns"
+    _ip_save_methods "opendns" ""
 
     if [ -f "$cache" ]; then
         local content
@@ -77,14 +77,72 @@ test_save_method_writes_v1_format() {
 }
 
 # =============================================================================
-# Test 4: File mode 600
+# Test 4: Saving both methods is atomic and preserves both records
+# =============================================================================
+
+test_save_methods_preserves_both_records() {
+    local cache="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
+    rm -f "$cache"
+
+    _ip_save_methods "opendns" "aws"
+
+    read -r dns http <<< "$(_ip_load_methods)"
+
+    if [ "$dns" = "opendns" ] && [ "$http" = "aws" ]; then
+        echo "  PASS: cache preserves DNS and HTTP methods together"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: expected dns=opendns and http=aws, got dns='$dns' http='$http'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 5: get_public_ip persists both successful methods
+# =============================================================================
+
+test_get_public_ip_persists_both_methods() {
+    local cache="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
+    rm -f "$cache"
+
+    # Stub discovery so this exercises get_public_ip's reconciliation path,
+    # not just the low-level cache writer.
+    is_socks_mode() { return 1; }
+    _ip_detect_dns() {
+        _IP_LAST_DNS_ID="opendns"
+        _IP_DETECTED_IP="198.51.100.7"
+        printf '%s\n' '198.51.100.7'
+    }
+    _ip_detect_http() {
+        _IP_LAST_HTTP_ID="aws"
+        _IP_DETECTED_IP="198.51.100.7"
+        printf '%s\n' '198.51.100.7'
+    }
+
+    local result
+    result=$(get_public_ip)
+    read -r dns http <<< "$(_ip_load_methods)"
+
+    if [ "$result" = "198.51.100.7" ] && \
+       [ "$dns" = "opendns" ] && [ "$http" = "aws" ]; then
+        echo "  PASS: get_public_ip persists DNS and HTTP methods together"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: get_public_ip lost one of the successful methods"
+        echo "   result='$result' dns='$dns' http='$http'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 6: File mode 600
 # =============================================================================
 
 test_save_method_mode_600() {
     local cache="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
     rm -f "$cache"
 
-    _ip_save_method "http" "aws"
+    _ip_save_methods "" "aws"
 
     if [ -f "$cache" ]; then
         local perms
@@ -93,8 +151,8 @@ test_save_method_mode_600() {
             echo "  PASS: cache file mode is 600"
             PASS=$((PASS + 1))
         else
-            echo "  WARN: cache file mode is $perms (expected 600)"
-            PASS=$((PASS + 1))
+            echo "  FAIL: cache file mode is $perms (expected 600)"
+            FAIL=$((FAIL + 1))
         fi
     else
         echo "  FAIL: cache file not created"
@@ -255,6 +313,10 @@ echo ""
 test_dispatch_functions_defined
 echo ""
 test_save_method_writes_v1_format
+echo ""
+test_save_methods_preserves_both_records
+echo ""
+test_get_public_ip_persists_both_methods
 echo ""
 test_save_method_mode_600
 echo ""
