@@ -158,6 +158,10 @@ _config_define_schema() {
         "enum" "INFO" \
         "Container log level: DEBUG, INFO, WARN, ERROR" \
         "DEBUG,INFO,WARN,ERROR"
+
+    _config_add "ADGUARD_DEV_MODE" \
+        "bool" "false" \
+        "Enable development mode: verbose logging and raw AdGuard CLI output"
 }
 
 # ---- Internal helpers -------------------------------------------------------
