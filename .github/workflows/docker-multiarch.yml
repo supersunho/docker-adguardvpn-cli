@@ -1,11 +1,6 @@
 name: AdGuard VPN CLI Builder
 
 on:
-    # Daily automatic builds
-    # schedule:
-    #     - cron: "0 3 * * *"
-
-    # Manual trigger with options
     workflow_dispatch:
         inputs:
             runner:
@@ -49,12 +44,10 @@ on:
                 default: false
                 type: boolean
 
-# Optimized concurrency management
 concurrency:
     group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event.inputs.build_version || github.event.inputs.source_version || 'latest' }}
     cancel-in-progress: true
 
-# Enhanced global environment variables
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}
@@ -63,7 +56,6 @@ env:
     BUILDKIT_PROGRESS: plain
     CACHE_VERSION: v1
 
-# Default permissions
 permissions:
     contents: read
 
@@ -73,10 +65,15 @@ permissions:
 jobs:
     prepare:
         runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
+        env:
+            SOURCE_VERSION_INPUT: ${{ inputs.source_version || 'latest' }}
+            BUILD_VERSION_INPUT: ${{ inputs.build_version || '' }}
+            FORCE_REBUILD_INPUT: ${{ inputs.force_rebuild || 'false' }}
         outputs:
             source_version: ${{ steps.get-version.outputs.source_version }}
             source_version_clean: ${{ steps.get-version.outputs.source_version_clean }}
             source_version_base: ${{ steps.get-version.outputs.source_version_base }}
+            source_version_exact: ${{ steps.get-version.outputs.source_version_exact }}
             build_version: ${{ steps.get-version.outputs.build_version }}
             build_version_clean: ${{ steps.get-version.outputs.build_version_clean }}
             build_version_base: ${{ steps.get-version.outputs.build_version_base }}
@@ -85,48 +82,59 @@ jobs:
         steps:
             - name: 🔍 Determine source and build versions
               id: get-version
+              env:
+                SOURCE_VERSION_INPUT: ${{ inputs.source_version || 'latest' }}
+                BUILD_VERSION_INPUT: ${{ inputs.build_version || '' }}
               run: |
-                  # =================================================================
-                  # Step 1: Get AdGuard VPN CLI source version
-                  # =================================================================
+                  # Validate version inputs — accept "latest" or semver with optional v prefix
+                  validate_version() {
+                      local field="$1" value="$2"
+                      if [ "$value" = "latest" ]; then
+                          return 0
+                      fi
+                      # Strict semver regex: v?MAJOR.MINOR.PATCH with optional prerelease suffix
+                      if ! echo "$value" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+                          echo "ERROR: ${field}='${value}' is not a valid version (semver or 'latest' only)" >&2
+                          exit 1
+                      fi
+                      # Reject shell metacharacters
+                      if echo "$value" | grep -qE '[$`;\"'"'"'\\n]'; then
+                          echo "ERROR: ${field} contains invalid characters" >&2
+                          exit 1
+                      fi
+                  }
 
-                  if [ "${{ github.event.inputs.source_version }}" = "latest" ] || [ -z "${{ github.event.inputs.source_version }}" ]; then
+                  validate_version "source_version" "$SOURCE_VERSION_INPUT"
+                  validate_version "build_version" "$BUILD_VERSION_INPUT"
+
+                  # Step 1: Get AdGuard VPN CLI source version
+                  if [ "$SOURCE_VERSION_INPUT" = "latest" ]; then
                     echo "🔍 Fetching latest AdGuard VPN CLI release from upstream..."
                     RELEASE_DATA=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest)
                     SOURCE_VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
                     echo "📦 Latest upstream version: $SOURCE_VERSION"
                   else
-                    SOURCE_VERSION="${{ github.event.inputs.source_version }}"
+                    SOURCE_VERSION="$SOURCE_VERSION_INPUT"
                     echo "📌 Using specified source version: $SOURCE_VERSION"
                   fi
 
-                  # =================================================================
-                  # Step 2: Determine build version (custom or fallback to source)
-                  # =================================================================
-
-                  if [ -n "${{ github.event.inputs.build_version }}" ]; then
-                    BUILD_VERSION="${{ github.event.inputs.build_version }}"
+                  # Step 2: Determine build version
+                  if [ -n "$BUILD_VERSION_INPUT" ]; then
+                    BUILD_VERSION="$BUILD_VERSION_INPUT"
                     echo "🏷️ Using custom build version: $BUILD_VERSION"
                   else
                     BUILD_VERSION="$SOURCE_VERSION"
                     echo "🏷️ Using source version as build version: $BUILD_VERSION"
                   fi
 
-                  # =================================================================
                   # Step 3: Process version strings for Docker tags
-                  # =================================================================
-
-                  # Clean versions (remove 'v' prefix if present)
                   SOURCE_VERSION_CLEAN=${SOURCE_VERSION#v}
                   BUILD_VERSION_CLEAN=${BUILD_VERSION#v}
-
-                  # Base versions (remove suffix like '-beta', '-rc1' etc)
                   SOURCE_VERSION_BASE=${SOURCE_VERSION_CLEAN%%-*}
                   BUILD_VERSION_BASE=${BUILD_VERSION_CLEAN%%-*}
 
-                  # =================================================================
-                  # Step 4: Output summary and export variables
-                  # =================================================================
+                  # source_version_exact is the tag to install and verify
+                  SOURCE_VERSION_EXACT="$SOURCE_VERSION"
 
                   echo ""
                   echo "📋 Version Summary:"
@@ -136,20 +144,20 @@ jobs:
                   echo "└─ 🚀 Build Base Version    : $BUILD_VERSION_BASE"
                   echo ""
 
-                  # Export all versions for use in subsequent jobs
-                  echo "source_version=$SOURCE_VERSION" >> $GITHUB_OUTPUT
-                  echo "source_version_clean=$SOURCE_VERSION_CLEAN" >> $GITHUB_OUTPUT
-                  echo "source_version_base=$SOURCE_VERSION_BASE" >> $GITHUB_OUTPUT
+                  printf 'source_version=%s\n' "$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+                  printf 'source_version_clean=%s\n' "$SOURCE_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+                  printf 'source_version_base=%s\n' "$SOURCE_VERSION_BASE" >> "$GITHUB_OUTPUT"
+                  printf 'source_version_exact=%s\n' "$SOURCE_VERSION_EXACT" >> "$GITHUB_OUTPUT"
 
-                  echo "build_version=$BUILD_VERSION" >> $GITHUB_OUTPUT
-                  echo "build_version_clean=$BUILD_VERSION_CLEAN" >> $GITHUB_OUTPUT
-                  echo "build_version_base=$BUILD_VERSION_BASE" >> $GITHUB_OUTPUT
+                  printf 'build_version=%s\n' "$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+                  printf 'build_version_clean=%s\n' "$BUILD_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
+                  printf 'build_version_base=%s\n' "$BUILD_VERSION_BASE" >> "$GITHUB_OUTPUT"
 
             - name: 🏗️ Generate build matrix
               id: generate-matrix
               run: |
                   echo "📦 Generating multi-architecture build matrix..."
-                  MATRIX=$(cat << 'EOF'
+                  MATRIX=$(cat << 'MJEOF'
                   {
                     "include": [
                       { "arch": "amd64", "platform": "linux/amd64" },
@@ -157,9 +165,9 @@ jobs:
                       { "arch": "armv7", "platform": "linux/arm/v7" }
                     ]
                   }
-                  EOF
+                  MJEOF
                   )
-                  echo "matrix=$(echo "$MATRIX" | jq -c .)" >> $GITHUB_OUTPUT
+                  printf 'matrix=%s\n' "$(echo "$MATRIX" | jq -c .)" >> "$GITHUB_OUTPUT"
                   echo "✅ Matrix generated with $(echo "$MATRIX" | jq '.include | length') architectures"
 
     ##############################################################################
@@ -174,6 +182,9 @@ jobs:
         strategy:
             matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
             fail-fast: false
+        env:
+            FORCE_REBUILD_INPUT: ${{ inputs.force_rebuild || 'false' }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         steps:
             - name: 🎯 Display build target information
               run: |
@@ -185,19 +196,20 @@ jobs:
 
             - name: 🔍 Check existing images via registry API
               id: check-images
+              env:
+                FORCE_REBUILD_INPUT: ${{ inputs.force_rebuild || 'false' }}
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   IMAGE_TAG="${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
                   echo "🔍 Checking if image exists: $IMAGE_TAG"
 
-                  # Always build on workflow_dispatch with force_rebuild
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$FORCE_REBUILD_INPUT" = "true" ]; then
                     echo "🔄 Force rebuild enabled via workflow_dispatch"
-                    echo "build_image=true" >> $GITHUB_OUTPUT
+                    echo "build_image=true" >> "$GITHUB_OUTPUT"
                     exit 0
                   fi
 
-                  # Check GHCR for existing image
-                  TOKEN="${{ secrets.GITHUB_TOKEN }}"
+                  TOKEN="$GITHUB_TOKEN"
                   REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
 
                   echo "🔍 Checking GHCR for existing image..."
@@ -206,16 +218,16 @@ jobs:
 
                   if echo "$GHCR_RESPONSE" | jq -e --arg TAG "$IMAGE_TAG" '.[] | select(.metadata.container.tags[]? == $TAG)' >/dev/null 2>&1; then
                     echo "✅ Image $IMAGE_TAG already exists in GHCR"
-                    if [ "${{ github.event.inputs.force_rebuild }}" = "true" ]; then
+                    if [ "$FORCE_REBUILD_INPUT" = "true" ]; then
                       echo "🔄 Force rebuild enabled, proceeding anyway"
-                      echo "build_image=true" >> $GITHUB_OUTPUT
+                      echo "build_image=true" >> "$GITHUB_OUTPUT"
                     else
                       echo "⏭️ Skipping build (image exists, use force_rebuild to override)"
-                      echo "build_image=false" >> $GITHUB_OUTPUT
+                      echo "build_image=false" >> "$GITHUB_OUTPUT"
                     fi
                   else
                     echo "❌ Image $IMAGE_TAG not found in GHCR, proceeding with build"
-                    echo "build_image=true" >> $GITHUB_OUTPUT
+                    echo "build_image=true" >> "$GITHUB_OUTPUT"
                   fi
 
             - name: 📥 Checkout repository
@@ -283,7 +295,7 @@ jobs:
                   cache-to: |
                       type=gha,mode=max,scope=${{ env.CACHE_VERSION }}-adguard-${{ matrix.arch }}-${{ needs.prepare.outputs.build_version_base }}
                   build-args: |
-                      AGCLI_VERSION=${{ needs.prepare.outputs.source_version_base }}
+                      AGCLI_VERSION=${{ needs.prepare.outputs.source_version_exact }}
                   tags: |
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}
                       ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-${{ matrix.arch }}
@@ -294,23 +306,22 @@ jobs:
             - name: 🧪 Comprehensive container verification
               if: steps.check-images.outputs.build_image == 'true' && github.event.inputs.verify_build == 'true'
               run: |
+                  set -euo pipefail
+
                   IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
                   echo "🔍 Starting verification suite for ${{ matrix.arch }}..."
 
                   echo "📋 Test 1: Binary Verification"
-                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" which adguardvpn-cli \
-                    && echo " - ✅ AdGuard VPN CLI binary exists" \
-                    || echo " - ❌ Binary missing"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" which adguardvpn-cli
+                  echo " - ✅ AdGuard VPN CLI binary exists"
 
                   echo "📋 Test 2: Version Check"
-                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --version \
-                    && echo " - ✅ Version command working" \
-                    || echo " - ❌ Version command failed"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --version
+                  echo " - ✅ Version command working"
 
                   echo "📋 Test 3: Help Command"
-                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --help >/dev/null \
-                    && echo " - ✅ Help command working" \
-                    || echo " - ❌ Help command failed"
+                  docker run --rm --platform ${{ matrix.platform }} --entrypoint "" "$IMAGE" adguardvpn-cli --help >/dev/null
+                  echo " - ✅ Help command working"
 
                   echo "🎉 Verification completed for ${{ matrix.arch }}!"
 
@@ -354,31 +365,6 @@ jobs:
                   pattern: digests-*
                   merge-multiple: false
 
-            - name: 🔍 Debug Check downloaded artifacts
-              run: |
-                  echo "🔍 Debugging artifact download..."
-                  echo "📁 Contents of /tmp/digests:"
-                  ls -la /tmp/digests/ || echo "❌ /tmp/digests directory not found"
-
-                  echo ""
-                  echo "📂 Checking individual architecture directories:"
-                  for arch in amd64 arm64 armv7; do
-                    if [ -d "/tmp/digests/$arch" ]; then
-                      echo "✅ $arch directory exists"
-                      if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
-                        echo "  📄 digest.txt exists: $(cat /tmp/digests/digests-$arch/digest.txt)"
-                      else
-                        echo "  ❌ digest.txt missing"
-                      fi
-                    else
-                      echo "❌ $arch directory not found"
-                    fi
-                  done
-
-                  echo ""
-                  echo "🗂️ All files in /tmp/digests:"
-                  find /tmp/digests -type f 2>/dev/null || echo "No files found"
-
             - name: 🛠️ Set up Docker Buildx
               uses: docker/setup-buildx-action@v3
 
@@ -395,60 +381,53 @@ jobs:
                   username: ${{ secrets.DOCKERHUB_USERNAME }}
                   password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-            - name: 🏷️ Create multi-arch manifests with auto-detection
+            - name: 🏷️ Create multi-arch manifests
               run: |
                   VERSION="${{ needs.prepare.outputs.build_version_base }}"
-                  echo "📦 Creating multi-arch manifests for automatic architecture detection..."
-                  echo "🎯 Target version: $VERSION"
+                  echo "📦 Creating multi-arch manifests for version: $VERSION"
 
-                  # Verify all architecture images exist
                   AVAILABLE_ARCHS=""
                   for arch in amd64 arm64 armv7; do
                     if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
                       AVAILABLE_ARCHS="$AVAILABLE_ARCHS $arch"
                       echo "✅ Confirmed $arch image availability"
                     else
-                      echo "⚠️ $arch image not found, skipping"
+                      echo "⚠️ $arch digest not found, skipping"
                     fi
                   done
 
                   if [ -z "$AVAILABLE_ARCHS" ]; then
                     echo "❌ No architecture images found, cannot create manifests"
-                    echo "🔍 This usually means:"
-                    echo "   1. Build job was skipped due to existing images"
-                    echo "   2. Force rebuild option should be enabled"
-                    echo "   3. Digest artifacts were not properly uploaded"
                     exit 1
                   fi
 
                   echo "🎯 Available architectures:$AVAILABLE_ARCHS"
 
-                  # Rest of the manifest creation logic...
                   for registry in ghcr dockerhub; do
                     if [ "$registry" = "ghcr" ]; then
                       PREFIX="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
                     else
                       PREFIX="${{ env.DOCKERHUB_REPO }}"
                     fi
-                    
+
                     ARCH_IMAGES=""
                     LATEST_ARCH_IMAGES=""
-                    
+
                     for arch in $AVAILABLE_ARCHS; do
                       ARCH_IMAGES="$ARCH_IMAGES ${PREFIX}:${VERSION}-${arch}"
                       LATEST_ARCH_IMAGES="$LATEST_ARCH_IMAGES ${PREFIX}:latest-${arch}"
                     done
-                    
+
                     echo "🏗️ Creating version manifest: ${PREFIX}:${VERSION}"
                     docker buildx imagetools create \
-                      --tag ${PREFIX}:${VERSION} \
+                      --tag "${PREFIX}:${VERSION}" \
                       $ARCH_IMAGES
-                    
+
                     echo "🏗️ Creating latest manifest: ${PREFIX}:latest"
                     docker buildx imagetools create \
-                      --tag ${PREFIX}:latest \
+                      --tag "${PREFIX}:latest" \
                       $LATEST_ARCH_IMAGES
-                    
+
                     echo "✅ Multi-arch manifests created for $registry"
                   done
 
@@ -466,9 +445,8 @@ jobs:
                   pattern: digests-*
                   merge-multiple: false
 
-            - name: 📊 Generate comprehensive build summary for AdGuard VPN CLI
+            - name: 📊 Generate comprehensive build summary
               run: |
-                  # Pre-calculate digest values and status
                   AMD64_DIGEST=$(cat /tmp/digests/digests-amd64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
                   ARM64_DIGEST=$(cat /tmp/digests/digests-arm64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
                   ARMV7_DIGEST=$(cat /tmp/digests/digests-armv7/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
@@ -480,16 +458,15 @@ jobs:
                   BUILD_COUNT=$(ls /tmp/digests 2>/dev/null | wc -l || echo "0")
                   BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
 
-                  # Write summary with pre-calculated values
-                  cat >> $GITHUB_STEP_SUMMARY << EOF
+                  cat >> "$GITHUB_STEP_SUMMARY" << "MJEOF"
                   # 🚀 AdGuard VPN CLI Multi-Architecture Build Summary
 
-                  **Build Date**: $BUILD_DATE  
-                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}  
-                  **Build/Release Tag**: ${{ needs.prepare.outputs.build_version_base }}  
-                  **Source Release Tag**: ${{ needs.prepare.outputs.source_version }}  
-                  **Build Number**: #${{ github.run_number }}  
-                  **Repository**: [${{ github.repository }}](https://github.com/${{ github.repository }})  
+                  **Build Date**: $BUILD_DATE
+                  **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}
+                  **Build/Release Tag**: ${{ needs.prepare.outputs.build_version_base }}
+                  **Source Release Tag**: ${{ needs.prepare.outputs.source_version }}
+                  **Build Number**: #${{ github.run_number }}
+                  **Repository**: [${{ github.repository }}](https://github.com/${{ github.repository }})
                   **Workflow Run**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
                   ## 🏗️ Multi-Architecture Build Results
@@ -497,67 +474,29 @@ jobs:
                   ### 📦 Container Image Digests
                   | Architecture | Digest | Status |
                   |--------------|--------|--------|
-                  | **amd64** | \`${AMD64_DIGEST}...\` | ${AMD64_STATUS} |
-                  | **arm64** | \`${ARM64_DIGEST}...\` | ${ARM64_STATUS} |
-                  | **armv7** | \`${ARMV7_DIGEST}...\` | ${ARMV7_STATUS} |
+                  | **amd64** | `${AMD64_DIGEST}...` | ${AMD64_STATUS} |
+                  | **arm64** | `${ARM64_DIGEST}...` | ${ARM64_STATUS} |
+                  | **armv7** | `${ARMV7_DIGEST}...` | ${ARMV7_STATUS} |
 
                   ### 🐳 Published Container Registries with Auto-Detection
 
-                  #### 🎯 Docker Hub (Primary) - Smart Architecture Detection
-                  \`\`\`
-                  # 🚀 NEW: Automatic architecture detection (Recommended)
+                  #### 🎯 Docker Hub - Smart Architecture Detection
+                  ```
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest
                   docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}
-                  # ↑ Automatically selects: amd64 on Intel/AMD, arm64 on Apple Silicon, armv7 on Raspberry Pi
-
-                  # Manual architecture selection (if needed)
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-amd64    # Intel/AMD x86_64
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-arm64    # Apple Silicon/ARM64
-                  docker pull ${{ env.DOCKERHUB_REPO }}:latest-armv7    # Raspberry Pi/ARMv7
-                  \`\`\`
+                  ```
 
                   #### 🔄 GitHub Container Registry (GHCR) - Smart Architecture Detection
-                  \`\`\`
-                  # 🚀 NEW: Automatic architecture detection
+                  ```
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}
-                  # ↑ Platform-aware: automatically downloads the right architecture
+                  ```
 
-                  # Manual architecture selection (if needed)
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
-                  docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-armv7
-                  \`\`\`
+                  **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**
+                  **📊 Total Architectures Built**: $BUILD_COUNT
 
-                  ## 🚀 Quick Start Commands (Universal Compatibility)
-
-                  ### 🎯 Universal Usage (Works on Any Architecture)
-                  \`\`\`
-                  # 🌟 One command works everywhere - Auto-detects your architecture!
-                  docker run -it --rm ${{ env.DOCKERHUB_REPO }}:latest
-
-                  # Check version (universal command)
-                  docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --version
-
-                  # Get help (works on all platforms)
-                  docker run --rm ${{ env.DOCKERHUB_REPO }}:latest adguardvpn-cli --help
-                  \`\`\`
-
-                  ## 🎉 Enhanced Features
-
-                  ✅ **Universal Compatibility**: Single command works across all architectures  
-                  ✅ **Smart Detection**: Automatically selects optimal image for your platform  
-                  ✅ **Flexible Options**: Both auto-detection and manual selection available  
-                  ✅ **Dual Registry**: Available on Docker Hub and GHCR with same features  
-                  ✅ **Future-Proof**: Ready for new architectures and platforms  
-                  ✅ **Version Control**: Separate source and build version management  
-
-                  **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**  
-                  **📊 Total Architectures Built**: $BUILD_COUNT  
-                  **🚀 Auto-Detection**: Enabled for seamless cross-platform usage  
-
-                  *Generated by [AdGuard VPN CLI Builder](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) • Build #${{ github.run_number }}*
-                  EOF
+                  *Generated by AdGuard VPN CLI Builder • Build #${{ github.run_number }}*
+                  MJEOF
 
     ##############################################################################
     # 5) Create GitHub Release
@@ -572,15 +511,14 @@ jobs:
             - name: 📥 Checkout repository
               uses: actions/checkout@v4
               with:
-                  fetch-depth: 0 # Fetch all history for proper commit analysis
+                  fetch-depth: 0
 
             - name: 🕐 Set current date
-              run: echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
+              run: echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
 
-            - name: 📝 Generate release notes with categorized commit history
+            - name: 📝 Generate release notes
               id: release-notes
               run: |
-                  # Get the tag of the previous release to compare commits
                   PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p' 2>/dev/null || git rev-list --max-parents=0 HEAD)
                   if [ -z "$PREV_TAG" ]; then
                     echo "🔍 No previous tag found, using initial commit"
@@ -589,9 +527,6 @@ jobs:
                     echo "🔍 Previous tag found: $PREV_TAG"
                   fi
 
-                  echo "📋 Fetching commits from $PREV_TAG to HEAD"
-
-                  # Initialize categorized commit lists
                   FEATURES=""
                   BUG_FIXES=""
                   CHORES=""
@@ -600,13 +535,11 @@ jobs:
                   TESTS=""
                   OTHERS=""
 
-                  # Get commits and categorize them
                   while IFS= read -r line; do
                     if [ -n "$line" ]; then
                       COMMIT_HASH=$(echo "$line" | cut -d'|' -f1)
                       COMMIT_SUBJECT=$(echo "$line" | cut -d'|' -f2-)
-                      
-                      # Categorize commits based on conventional commit prefixes
+
                       if [[ $COMMIT_SUBJECT =~ ^(feat|feature|enhance|add)(\(.+\))?:[[:space:]]* ]]; then
                         FEATURES="${FEATURES}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
                       elif [[ $COMMIT_SUBJECT =~ ^(fix|bug|patch)(\(.+\))?:[[:space:]]* ]]; then
@@ -627,86 +560,55 @@ jobs:
                     fi
                   done < <(git log --oneline "${PREV_TAG}..HEAD" --pretty=format:"%h|%s" | sort -k2)
 
-                  # Create release notes body with categorized commits
-                  RELEASE_NOTES="# 🚀 AdGuard VPN CLI Universal Multi-Architecture Release ${{ needs.prepare.outputs.build_version }}
+                  RELEASE_NOTES="# 🚀 AdGuard VPN CLI Release ${{ needs.prepare.outputs.build_version }}"
+                  RELEASE_NOTES="${RELEASE_NOTES}
 
                   **Build Date**: ${{ env.BUILD_DATE }}
                   **AdGuard VPN CLI Source Version**: ${{ needs.prepare.outputs.source_version_base }}
                   **Build/Release Version**: ${{ needs.prepare.outputs.build_version_base }}
-                  **Universal Compatibility**: ✅ Auto-architecture detection enabled
-                  **Build Workflow**: #${{ github.run_number }}
 
                   ## 📋 Changelog
-
                   "
 
-                  # Add categorized sections to release notes
-                  if [ -n "$FEATURES" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### ✨ Features
+                  [ -n "$FEATURES" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### ✨ Features
                   ${FEATURES}
-
                   "
-                  fi
-
-                  if [ -n "$BUG_FIXES" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### 🐛 Bug Fixes
+                  [ -n "$BUG_FIXES" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 🐛 Bug Fixes
                   ${BUG_FIXES}
-
                   "
-                  fi
-
-                  if [ -n "$REFACTOR" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### 🔧 Refactoring
+                  [ -n "$REFACTOR" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 🔧 Refactoring
                   ${REFACTOR}
-
                   "
-                  fi
-
-                  if [ -n "$TESTS" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### 🧪 Tests
+                  [ -n "$TESTS" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 🧪 Tests
                   ${TESTS}
-
                   "
-                  fi
-
-                  if [ -n "$DOCS" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### 📚 Documentation
+                  [ -n "$DOCS" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 📚 Documentation
                   ${DOCS}
-
                   "
-                  fi
-
-                  if [ -n "$CHORES" ]; then
-                    RELEASE_NOTES="${RELEASE_NOTES}### 📦 Chores
+                  [ -n "$CHORES" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 📦 Chores
                   ${CHORES}
-
                   "
-                  fi
 
-                  # if [ -n "$OTHERS" ]; then
-                  #   RELEASE_NOTES="${RELEASE_NOTES}### 🔄 Other Changes
-                  # ${OTHERS}
-
-                  # "
-                  # fi
-
-                  # Export release notes to file and GitHub output
                   echo -e "$RELEASE_NOTES" > release-notes.txt
-                  echo "body<<EOF" >> $GITHUB_OUTPUT
-                  echo -e "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-                  echo "EOF" >> $GITHUB_OUTPUT
+                  {
+                    echo 'body<<EOF'
+                    echo -e "$RELEASE_NOTES"
+                    echo 'EOF'
+                  } >> "$GITHUB_OUTPUT"
 
-                  echo "✅ Release notes generated successfully"
-                  echo "📋 Release notes preview:"
-                  echo "----------------------------------------"
-                  echo -e "$RELEASE_NOTES"
-                  echo "----------------------------------------"
+                  echo "✅ Release notes generated"
 
-            - name: 🏷️ Create comprehensive GitHub Release for AdGuard VPN CLI
+            - name: 🏷️ Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.build_version }}-build-${{ github.run_number }}
-                  name: "AdGuard VPN CLI Universal Multi-Arch Release ${{ needs.prepare.outputs.build_version }} (Build #${{ github.run_number }})"
+                  name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.build_version }} (Build #${{ github.run_number }})"
                   body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/*/digest.txt
                   draft: false
