@@ -24,23 +24,24 @@ readonly LOG_LEVEL_WARN=2
 readonly LOG_LEVEL_ERROR=3
 
 # Mapping from name to numeric value
+# NOTE: Uses echo (not return) because return codes 1/2/3 are treated as
+# failures by set -e, causing the shell to abort.
 _log_name_to_level() {
     case "${1,,}" in
-        debug) return 0 ;;
-        info)  return 1 ;;
-        warn)  return 2 ;;
-        error) return 3 ;;
-        *)     return 1 ;;  # default: INFO
+        debug) echo 0 ;;
+        info)  echo 1 ;;
+        warn)  echo 2 ;;
+        error) echo 3 ;;
+        *)     echo 1 ;;  # default: INFO
     esac
 }
 
 # =============================================================================
-# Core logging function
+# Core logging function — implementation
 # =============================================================================
 
-# Usage: log <LEVEL> <MESSAGE>
-# LEVEL is one of DEBUG, INFO, WARN, ERROR (case-insensitive)
-log() {
+# Internal implementation.  Public entry point is log() below.
+_log_real() {
     local level="${1:-INFO}"
     local message="${2:-}"
 
@@ -59,10 +60,8 @@ log() {
     # Check if this message should be shown
     local msg_num
     local cfg_num
-    _log_name_to_level "$level_upper"
-    msg_num=$?
-    _log_name_to_level "$configured_level"
-    cfg_num=$?
+    msg_num=$(_log_name_to_level "$level_upper")
+    cfg_num=$(_log_name_to_level "$configured_level")
 
     if [ "$msg_num" -lt "$cfg_num" ]; then
         return 0  # Message level too low, skip
@@ -74,10 +73,35 @@ log() {
 
     # Determine caller script name (basename without .sh)
     local caller_name
-    caller_name="$(basename "${BASH_SOURCE[1]:-$0}" .sh 2>/dev/null || echo 'unknown')"
+    caller_name="$(basename "${BASH_SOURCE[2]:-$0}" .sh 2>/dev/null || echo 'unknown')"
 
     # Print to stderr so stdout stays clean for pipe consumers
     echo "[${timestamp}] [${level_upper}] [${caller_name}] ${message}" >&2
+}
+
+# =============================================================================
+# Public log function  —  handles both modern and legacy calling conventions.
+# =============================================================================
+#
+# Modern:  log INFO "message"
+#          log ERROR "Something went wrong"
+# Legacy:  log "message"           (treated as INFO)
+#
+# The legacy-compatibility detection lives here (inside the function itself)
+# so that existing scripts calling log "message" continue to work without
+# a separate wrapper — and without recursion risk.
+
+log() {
+    # If the first argument is a recognised log level, pass through as-is.
+    case "${1,,}" in
+        debug|info|warn|error)
+            _log_real "$@"
+            ;;
+        *)
+            # Bare message without a level — treat as INFO (legacy compat).
+            _log_real INFO "$@"
+            ;;
+    esac
 }
 
 # Shorthand aliases (optional, for scripting convenience)

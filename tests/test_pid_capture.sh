@@ -142,8 +142,10 @@ test_timeout_kills_real_process() {
     # Simulate timeout: kill the real login PID
     kill "$login_pid" 2>/dev/null || true
     sleep 0.2
-    ! kill -0 "$login_pid" 2>/dev/null
-    assert_eq "Timeout: login process was killed" "0" "$?"
+    # Verify the process was killed (kill -0 should fail, rc != 0)
+    local rc=0
+    kill -0 "$login_pid" 2>/dev/null || rc=$?
+    assert_eq "Timeout: login process was killed" "1" "$rc"
 
     # wait returns SIGTERM (143) which _oauth_login accepts
     local rc=0

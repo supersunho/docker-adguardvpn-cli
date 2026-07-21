@@ -137,6 +137,7 @@ setup_traps() {
 
     # EXIT trap runs _default_cleanup unless CLEANUP_FN is set
     if [ -n "$_CLEANUP_FN" ]; then
+        # shellcheck disable=SC2064
         trap "$_CLEANUP_FN" EXIT
     else
         trap '_default_cleanup' EXIT
