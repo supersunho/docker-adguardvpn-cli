@@ -2,6 +2,7 @@ FROM ubuntu:24.04 AS base
 
 ARG PUID=1001
 ARG PGID=1001
+ARG AGCLI_VERSION=latest
 
 ENV DEBIAN_FRONTEND=noninteractive 
 
@@ -31,12 +32,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "✅ CA certificates updated"
 
 # Download and install AdGuard VPN CLI
-# Note: install.sh uses set -u and references $USER; we pass it explicitly
-# so the build doesn't fail when USER is unset in the build environment.
-RUN curl -fsSL -o /tmp/install.sh \
-    https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/master/scripts/release/install.sh && \
+# When AGCLI_VERSION is "latest", fetch the latest release tag from GitHub.
+# Otherwise, use the exact version specified (with or without 'v' prefix).
+RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
+        echo "🔍 Fetching latest AdGuard VPN CLI release..." && \
+        ACTUAL_VERSION=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r .tag_name) && \
+        echo "📦 Latest version: ${ACTUAL_VERSION}"; \
+    else \
+        ACTUAL_VERSION="${AGCLI_VERSION}"; \
+        echo "📦 Using specified version: ${ACTUAL_VERSION}"; \
+    fi && \
+    [ -n "$ACTUAL_VERSION" ] || { echo "ERROR: Could not determine version"; exit 1; } && \
+    echo "⬇️  Downloading AdGuard VPN CLI ${ACTUAL_VERSION}..." && \
+    curl -fsSL -o /tmp/install.sh \
+        "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/${ACTUAL_VERSION}/scripts/release/install.sh" && \
     USER=root sh /tmp/install.sh -v -a y && \
-    rm /tmp/install.sh
+    rm /tmp/install.sh && \
+    echo "🔍 Verifying installed version..." && \
+    INSTALLED_VERSION=$(adguardvpn-cli --version 2>/dev/null | head -1) && \
+    echo "📋 Installed: ${INSTALLED_VERSION}" && \
+    echo "✅ AdGuard VPN CLI installation and version check completed"
+
 # Create non-root user with configurable UID/GID
 RUN groupadd -g ${PGID} appuser && \
     useradd -m -u ${PUID} -g appuser -s /bin/bash appuser
