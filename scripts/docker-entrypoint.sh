@@ -5,18 +5,17 @@ set -euo pipefail
 # AdGuard VPN Container Entry Point Script
 # =============================================================================
 
-# Import utility functions
 source /opt/adguardvpn_cli/scripts/utils.sh
 
-# Enable error handling
+# Bootstrap configuration before any side effects
+config_bootstrap
+
 setup_traps
 
 # =============================================================================
 # Signal handling
 # =============================================================================
 
-# Cleanup function: kill children and exit gracefully on SIGTERM/SIGINT.
-# Using the wait $! pattern below ensures traps interrupt sleep immediately.
 _cleanup_and_exit() {
     local exit_code="${1:-0}"
     log INFO "Shutting down..."
@@ -41,14 +40,8 @@ _shutdown_handler() {
 trap _shutdown_handler TERM INT
 
 # =============================================================================
-# Configuration Setup
+# Configuration Setup (bootstrapped above)
 # =============================================================================
-
-export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
-export ADGUARD_CONNECTION_TYPE=${ADGUARD_CONNECTION_TYPE:-TUN}
-export ADGUARD_SHOW_LOG="${ADGUARD_SHOW_LOG:-true}"
-export ADGUARD_SHOW_SUMMARY="${ADGUARD_SHOW_SUMMARY:-true}"
-export ADGUARD_SHOW_LOG_LEVEL="${ADGUARD_SHOW_LOG_LEVEL:-INFO}"
 
 log INFO "AdGuard VPN Container Starting"
 log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
@@ -58,7 +51,6 @@ log INFO "Connection mode: ${ADGUARD_CONNECTION_TYPE}"
 # Permission Setup
 # =============================================================================
 
-# Ensure /dev/net/tun is accessible
 if [ -c /dev/net/tun ]; then
     if chmod 666 /dev/net/tun 2>/dev/null; then
         log DEBUG "/dev/net/tun permissions set to 666"
@@ -69,7 +61,6 @@ else
     log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
 fi
 
-# Ensure data directory exists and is writable
 DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
 if [ ! -d "$DATA_DIR" ]; then
     if mkdir -p "$DATA_DIR" 2>/dev/null; then
@@ -142,8 +133,6 @@ done
 
 log INFO "Log file ready"
 
-# Log file tail: when SHOW_LOG is true, relay AdGuard CLI log to container output.
-# DEBUG level shows raw output; INFO/WARN/ERROR suppress debug/trace noise.
 if [ "${ADGUARD_SHOW_LOG,,}" = "true" ]; then
     if [ "${ADGUARD_SHOW_LOG_LEVEL,,}" = "debug" ]; then
         tail -F "$LOG_FILE" &
@@ -169,22 +158,18 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
         _cleanup_and_exit 1
     fi
 
-    # Check if kill switch script exists
     if [ ! -f /opt/adguardvpn_cli/scripts/killswitch.sh ]; then
         log ERROR "Kill switch script not found"
         _cleanup_and_exit 1
     fi
 
-    # Ensure executable
     [ ! -x /opt/adguardvpn_cli/scripts/killswitch.sh ] && chmod +x /opt/adguardvpn_cli/scripts/killswitch.sh
 
     export REAL_IP_BEFORE_VPN="$REAL_IP"
 
-    # Start kill switch in background
     /opt/adguardvpn_cli/scripts/killswitch.sh "$REAL_IP" &
     KILL_PID=$!
 
-    # Validate kill switch started
     if ! kill -0 "${KILL_PID}" 2>/dev/null; then
         log ERROR "Kill switch failed to start"
         _cleanup_and_exit 1
@@ -193,28 +178,18 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Kill switch activated (PID: ${KILL_PID})"
     log INFO "Kill switch monitoring active"
 
-    # =========================================================================
-    # Main monitoring loop (with wait $! for immediate signal response)
-    # =========================================================================
-
     while kill -0 "${KILL_PID}" 2>/dev/null; do
         sleep 60 &
         wait $!
         log INFO "Kill switch heartbeat — PID ${KILL_PID} running"
     done
 
-    # Kill switch terminated on its own
     log WARN "Kill switch process exited — container shutting down"
     _cleanup_and_exit 1
 
 else
-    # =========================================================================
-    # Kill Switch Disabled
-    # =========================================================================
-
     log WARN "Kill Switch DISABLED — container will continue even if VPN fails"
     log INFO "Monitoring AdGuard VPN log only"
 
-    # Keep container alive with log monitoring (TAIL_PID may be unset if ADGUARD_SHOW_LOG=false)
     [ -n "${TAIL_PID:-}" ] && wait "${TAIL_PID}" || true
 fi

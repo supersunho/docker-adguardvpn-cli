@@ -3,28 +3,15 @@ set -euo pipefail
 
 # Import utility functions
 source /opt/adguardvpn_cli/scripts/utils.sh
+
+# Bootstrap configuration before any side effects
+config_bootstrap
+
 setup_traps
 
 # =============================================================================
-# Configuration defaults
+# Configuration defaults — all provided by config_bootstrap() above
 # =============================================================================
-
-export ADGUARD_CONNECTION_LOCATION=${ADGUARD_CONNECTION_LOCATION:-"JP"}
-export ADGUARD_CONNECTION_TYPE=${ADGUARD_CONNECTION_TYPE:-"TUN"}
-export ADGUARD_SOCKS5_USERNAME=${ADGUARD_SOCKS5_USERNAME:-"username"}
-export ADGUARD_SOCKS5_PASSWORD=${ADGUARD_SOCKS5_PASSWORD:-"password"}
-export ADGUARD_SOCKS5_HOST=${ADGUARD_SOCKS5_HOST:-"127.0.0.1"}
-export ADGUARD_SOCKS5_PORT=${ADGUARD_SOCKS5_PORT:-1080}
-export ADGUARD_SEND_REPORTS=${ADGUARD_SEND_REPORTS:-false}
-export ADGUARD_SET_SYSTEM_DNS=${ADGUARD_SET_SYSTEM_DNS:-false}
-export ADGUARD_USE_CUSTOM_DNS=${ADGUARD_USE_CUSTOM_DNS:-true}
-export ADGUARD_CUSTOM_DNS=${ADGUARD_CUSTOM_DNS:-"1.1.1.1"}
-
-# Additional configuration options
-export ADGUARD_AUTO_UPDATE=${ADGUARD_AUTO_UPDATE:-false}
-export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
-export ADGUARD_SHOW_HINTS=${ADGUARD_SHOW_HINTS:-"on"}
-export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
 
 # Derive ADGUARD_DEBUG_LOGGING from SHOW_LOG_LEVEL (internal, not user-set).
 # When SHOW_LOG_LEVEL=DEBUG, enable AdGuard CLI debug logging.
@@ -33,11 +20,6 @@ if [ "${ADGUARD_SHOW_LOG_LEVEL:-INFO}" = "DEBUG" ]; then
 else
     export ADGUARD_DEBUG_LOGGING="off"
 fi
-export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
-export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
-export ADGUARD_TELEMETRY=${ADGUARD_TELEMETRY:-false}
-export ADGUARD_TUN_ROUTING_MODE=${ADGUARD_TUN_ROUTING_MODE:-"AUTO"}
-export ADGUARD_BOUND_IF_OVERRIDE=${ADGUARD_BOUND_IF_OVERRIDE:-""}
 
 # =============================================================================
 # OAuth / Web Authentication
@@ -45,12 +27,6 @@ export ADGUARD_BOUND_IF_OVERRIDE=${ADGUARD_BOUND_IF_OVERRIDE:-""}
 
 AUTH_FILE="${HOME}/.local/share/adguardvpn-cli/vpn.pid"
 
-# Wrapper around adguardvpn-cli login that detects the OAuth device code
-# URL in the output and prompts the user to open it in their browser.
-#
-# adguardvpn-cli login is interactive in a TTY (b/s/x menu), but in a
-# Docker container without a TTY it prints the device code URL and then
-# periodically polls the auth server until the user completes login.
 _oauth_login() {
     log_force INFO ""
     log_force INFO "=============================================="
@@ -69,38 +45,24 @@ _oauth_login() {
     log_force INFO "=============================================="
     log_force INFO ""
 
-    # Run login in background, writing to a temp file.
-    #
-    # NOTE: We deliberately avoid a pipeline (cmd | tee ... &) because
-    # $! would then capture tee's PID, not adguardvpn-cli login's PID,
-    # making wait / kill / timeout operate on the wrong process.
-    #
-    # Instead we background adguardvpn-cli directly and use a separate
-    # tail -f to relay output to the log in real time.
-
     local temp_file
     temp_file="$(mktemp /tmp/adguard-login-XXXXXX 2>/dev/null)" || temp_file="/tmp/adguard-login-$$"
 
-    # Background the actual login command — $! is its real PID
     adguardvpn-cli login > "$temp_file" 2>&1 &
     local login_pid=$!
 
-    # Relay output in real time to the container log
     tail -f "$temp_file" 2>/dev/null &
     local tail_pid=$!
 
-    # Wait for initial output, then check for URL
     sleep 3 &
     wait $! 2>/dev/null || true
 
-    local timeout=1800  # 30 minutes max for auth
+    local timeout=1800
     local elapsed=0
     local url_printed=false
     local timed_out=false
 
-    # Monitor the login process (not tail — its PID is tracked separately)
     while kill -0 "$login_pid" 2>/dev/null; do
-        # Check for device code URL in captured output (one time only)
         if [ "$url_printed" = false ] && \
            grep -qE 'https://auth\.adguard\.io/device_code' "$temp_file" 2>/dev/null; then
             local device_url
@@ -128,31 +90,24 @@ _oauth_login() {
 
         if [ "$elapsed" -ge "$timeout" ]; then
             timed_out=true
-            log_force WARN "Login timed out after ${timeout}s — user did not authenticate in time"
+            log_force WARN "Login timed out after ${timeout}s"
             kill "$login_pid" 2>/dev/null || true
             break
         fi
     done
 
-    # Stop the relay tail process
     kill "$tail_pid" 2>/dev/null || true
     wait "$tail_pid" 2>/dev/null || true
-
     rm -f "$temp_file" 2>/dev/null || true
 
-    # Collect the actual exit code of adguardvpn-cli login.
-    # The &&/|| pattern captures the exit code while preventing set -e from aborting
-    # on non-zero (e.g. 143 when we killed the process ourselves).
     local login_exit=0
     wait "$login_pid" 2>/dev/null && login_exit=$? || login_exit=$?
 
-    # Timeout from our own SIGTERM — user never authenticated
     if [ "$timed_out" = true ]; then
         log_force ERROR "Authentication timed out after ${timeout}s"
         return 1
     fi
 
-    # The process exited on its own — check its exit code
     if [ "$login_exit" -ne 0 ]; then
         log_force ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
         return 1
@@ -192,7 +147,6 @@ fi
 log INFO "Configuring AdGuard VPN..."
 adguardvpn-cli config set-mode "${ADGUARD_CONNECTION_TYPE,,}"
 
-# Only clear SOCKS auth in SOCKS mode (harmless in TUN mode, but semantically correct)
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
     adguardvpn-cli config clear-socks-auth
 fi

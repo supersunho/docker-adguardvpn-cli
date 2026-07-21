@@ -27,7 +27,8 @@ readonly LOG_LEVEL_ERROR=3
 # NOTE: Uses echo (not return) because return codes 1/2/3 are treated as
 # failures by set -e, causing the shell to abort.
 _log_name_to_level() {
-    case "${1,,}" in
+    local level="${1:-info}"
+    case "${level,,}" in
         debug) echo 0 ;;
         info)  echo 1 ;;
         warn)  echo 2 ;;
@@ -54,7 +55,7 @@ _log_real() {
     local level_upper
     level_upper="$(echo "$level" | tr '[:lower:]' '[:upper:]')"
 
-    # Get effective log level from environment
+    # Get effective log level from environment with safe default
     local configured_level="${ADGUARD_SHOW_LOG_LEVEL:-INFO}"
 
     # Check if this message should be shown
@@ -67,8 +68,10 @@ _log_real() {
         return 0  # Message level too low, skip
     fi
 
-    # ADGUARD_SHOW_LOG=false suppresses all container output
-    if [ "${ADGUARD_SHOW_LOG,,}" = "false" ]; then
+    # ADGUARD_SHOW_LOG=false suppresses all container output.
+    # Use safe default (true) when unset so logging works before config initialisation.
+    local show_log="${ADGUARD_SHOW_LOG:-true}"
+    if [ "${show_log,,}" = "false" ]; then
         return 0  # Log output disabled
     fi
 

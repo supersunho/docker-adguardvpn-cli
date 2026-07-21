@@ -200,6 +200,48 @@ config_export_defaults() {
     done
 }
 
+# ---- Public: config_normalize ------------------------------------------------
+
+# Canonicalize case-insensitive values (booleans → true/false, enums → exact case).
+# Must not modify user-visible secret values.
+# Returns non-zero on invalid input.
+config_normalize() {
+    local key val err=0
+
+    for key in "${_CONFIG_KEYS[@]}"; do
+        val="${!key:-}"
+        [ -z "$val" ] && val="${_CONFIG_DEFAULT[$key]}"
+
+        case "${_CONFIG_TYPE[$key]}" in
+            bool)
+                case "${val,,}" in
+                    true|false) export "${key}=${val,,}" ;;
+                    *) log ERROR "${key}: must be true or false (got '${val}')"; err=1 ;;
+                esac
+                ;;
+            enum)
+                local found=false IFS=,
+                local canonical=""
+                for e in ${_CONFIG_ENUM[$key]}; do
+                    if [ "${val,,}" = "${e,,}" ]; then
+                        found=true
+                        canonical="$e"
+                        break
+                    fi
+                done
+                if [ "$found" = true ]; then
+                    export "${key}=${canonical}"
+                else
+                    log ERROR "${key}: must be one of ${_CONFIG_ENUM[$key]} (got '${val}')"
+                    err=1
+                fi
+                ;;
+        esac
+    done
+
+    return $err
+}
+
 # ---- Public: config_validate -------------------------------------------------
 
 # Validate currently-set configuration.  Dies on first error.
@@ -269,6 +311,16 @@ config_validate() {
     done
 
     return $err
+}
+
+# ---- Public: config_bootstrap ------------------------------------------------
+
+# Full bootstrap: export defaults, normalize, then validate.
+# Call this before any side effects (network, OAuth, VPN commands).
+config_bootstrap() {
+    config_export_defaults
+    config_normalize
+    config_validate
 }
 
 # ---- Public: config_get (read a single config value) -------------------------
