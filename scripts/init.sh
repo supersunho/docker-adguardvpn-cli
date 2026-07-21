@@ -167,11 +167,11 @@ _oauth_login() {
 # =============================================================================
 
 if [ -f "$AUTH_FILE" ]; then
-    log INFO "Authentication credentials found. Using existing session."
+    log_force INFO "Authentication credentials found. Using existing session."
 else
-    log INFO "No authentication credentials found."
+    log_force INFO "No authentication credentials found."
     if ! _oauth_login; then
-        log ERROR "Authentication failed. Container cannot connect to VPN."
+        log_force ERROR "Authentication failed. Container cannot connect to VPN."
         exit 1
     fi
 fi
