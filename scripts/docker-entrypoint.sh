@@ -71,10 +71,12 @@ if [ ! -d "$DATA_DIR" ]; then
     fi
 fi
 
-# Verify data directory is writable
+# Verify data directory is writable -- fail fast to prevent silent OAuth loss
 if [ -d "$DATA_DIR" ] && [ ! -w "$DATA_DIR" ]; then
-    log WARN "Data directory is not writable by current user ($(id -un 2>/dev/null || echo 'unknown'))"
-    log WARN "OAuth tokens and VPN state will not persist across restarts"
+    current_uid=$(id -u)
+    log_force ERROR "Data directory is not writable: ${DATA_DIR}"
+    log_force ERROR "Run: sudo chown -R ${current_uid}:${current_uid} ${DATA_DIR}"
+    exit 78
 fi
 
 LOG_FILE="${DATA_DIR}/app.log"
