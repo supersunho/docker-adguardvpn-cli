@@ -119,7 +119,9 @@ _oauth_login() {
     rm -f "$temp_file" 2>/dev/null || true
 
     # Check return status
-    wait "$login_pid" 2>/dev/null || true
+    # wait returns the exit code of the child process;
+    # do NOT use || true here or we lose the error code.
+    wait "$login_pid" 2>/dev/null
     local login_exit=$?
 
     if [ "$login_exit" -ne 0 ] && [ "$login_exit" -ne 143 ]; then
