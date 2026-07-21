@@ -64,6 +64,16 @@ test_auth_detection_does_not_use_runtime_pid_file() {
     fi
 }
 
+test_init_does_not_clear_socks_auth_before_configuration() {
+    if grep -q 'config clear-socks-auth' "${PROJECT_DIR}/scripts/init.sh"; then
+        echo "  FAIL: init.sh clears SOCKS authentication before the safe setup helper"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: init.sh delegates SOCKS authentication setup to the helper"
+        PASS=$((PASS + 1))
+    fi
+}
+
 echo "=========================================="
 echo " Authentication Recovery Tests"
 echo "=========================================="
@@ -71,6 +81,7 @@ echo ""
 
 test_auth_failures_reset_data_on_threshold
 test_auth_detection_does_not_use_runtime_pid_file
+test_init_does_not_clear_socks_auth_before_configuration
 
 echo ""
 echo "=========================================="
