@@ -26,6 +26,12 @@ export ADGUARD_UPDATE_CHANNEL=${ADGUARD_UPDATE_CHANNEL:-"release"}
 export ADGUARD_SHOW_HINTS=${ADGUARD_SHOW_HINTS:-"on"}
 export ADGUARD_DEBUG_LOGGING=${ADGUARD_DEBUG_LOGGING:-"on"}
 export ADGUARD_SHOW_NOTIFICATIONS=${ADGUARD_SHOW_NOTIFICATIONS:-"on"}
+
+# In production mode (ADGUARD_DEV_MODE=false), suppress AdGuard CLI debug logging
+# for clean output. Debug logs are only shown in development mode.
+if [ "${ADGUARD_DEV_MODE,,}" != "true" ]; then
+    ADGUARD_DEBUG_LOGGING="off"
+fi
 export ADGUARD_PROTOCOL=${ADGUARD_PROTOCOL:-"auto"}
 export ADGUARD_POST_QUANTUM=${ADGUARD_POST_QUANTUM:-"off"}
 export ADGUARD_TELEMETRY=${ADGUARD_TELEMETRY:-false}

@@ -139,9 +139,24 @@ done
 
 log INFO "Log file ready"
 
-# Start background log monitoring
-tail -F "$LOG_FILE" &
-TAIL_PID=$!
+# In production mode (ADGUARD_DEV_MODE=false), suppress AdGuard CLI debug logging
+# and only show kill switch status. Dev mode shows everything for troubleshooting.
+export ADGUARD_DEV_MODE="${ADGUARD_DEV_MODE:-false}"
+if [ "${ADGUARD_DEV_MODE,,}" = "true" ]; then
+    export ADGUARD_LOG_LEVEL="${ADGUARD_LOG_LEVEL:-DEBUG}"
+    log INFO "DEV MODE: verbose logging enabled"
+
+    # Start background log monitoring (raw AdGuard CLI output)
+    tail -F "$LOG_FILE" &
+    TAIL_PID=$!
+else
+    export ADGUARD_LOG_LEVEL="${ADGUARD_LOG_LEVEL:-INFO}"
+    log INFO "Production mode: showing kill switch status only"
+
+    # In production, filter AdGuard CLI log to show only important messages
+    tail -F "$LOG_FILE" | grep --line-buffered -v -i -E '(debug|trace)' 2>/dev/null &
+    TAIL_PID=$!
+fi
 
 # =============================================================================
 # Kill Switch Setup
@@ -150,7 +165,7 @@ TAIL_PID=$!
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Activating Kill Switch..."
 
-    sleep 5 &
+    sleep 2 &
     wait $!
 
     if [ "$REAL_IP" = "ERROR" ]; then
@@ -182,7 +197,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Kill switch activated (PID: ${KILL_PID})"
 
     # Wait for stability using wait $! pattern
-    sleep 5 &
+    sleep 2 &
     wait $!
 
     if ! kill -0 "${KILL_PID}" 2>/dev/null; then
