@@ -16,12 +16,14 @@
 # Configuration
 # =============================================================================
 
-# Ordered list of DNS-based discovery methods
+# Ordered list of DNS-based discovery methods.
+# Post-processing (quote stripping for TXT records) is handled uniformly
+# in _ip_detect_dns — no need for inline awk/tr pipelines.
 _IP_DNS_METHODS=(
     "OpenDNS|dig_get +short myip.opendns.com @resolver1.opendns.com"
-    "Google|dig_get TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'\"' '{print \$2}'"
-    "Cloudflare1001|dig_get +short txt ch whoami.cloudflare @1.0.0.1 | tr -d '\"'"
-    "Cloudflare1111|dig_get +short txt ch whoami.cloudflare @1.1.1.1 | tr -d '\"'"
+    "Google|dig_get TXT +short o-o.myaddr.l.google.com @ns1.google.com"
+    "Cloudflare1001|dig_get +short txt ch whoami.cloudflare @1.0.0.1"
+    "Cloudflare1111|dig_get +short txt ch whoami.cloudflare @1.1.1.1"
 )
 
 # Ordered list of HTTP-based discovery services
@@ -70,7 +72,17 @@ _ip_detect_dns() {
         IFS='|' read -r method_name method_command <<< "$entry"
         log DEBUG "DNS: testing ${method_name}"
 
-        ip=$(eval "$method_command" 2>/dev/null)
+        # Split command string into array for safe execution without eval.
+        # The command is a function call (dig_get) with its arguments, e.g.
+        #   "dig_get +short myip.opendns.com @resolver1.opendns.com"
+        local -a cmd_parts=()
+        read -ra cmd_parts <<< "$method_command"
+        ip=$("${cmd_parts[@]}" 2>/dev/null)
+
+        # Strip quotes for TXT-record results (e.g. Cloudflare, Google)
+        if ! _is_valid_ipv4 "$ip"; then
+            ip=$(echo "$ip" | tr -d '"')
+        fi
 
         if _is_valid_ipv4 "$ip"; then
             log DEBUG "DNS: ${method_name} -> ${ip}"
@@ -170,7 +182,14 @@ get_public_ip() {
     # --- DNS detection --------------------------------------------------------
     if [ -n "$saved_dns" ] && [ "$use_socks5" = false ]; then
         IFS='|' read -r _ saved_cmd <<< "$saved_dns"
-        dns_ip=$(eval "$saved_cmd" 2>/dev/null)
+        # Execute saved command via array (no eval)
+        local -a cmd_parts=()
+        read -ra cmd_parts <<< "$saved_cmd"
+        dns_ip=$("${cmd_parts[@]}" 2>/dev/null)
+        # Strip quotes for TXT-record results
+        if ! _is_valid_ipv4 "$dns_ip"; then
+            dns_ip=$(echo "$dns_ip" | tr -d '"')
+        fi
         if _is_valid_ipv4 "$dns_ip"; then
             log DEBUG "DNS: reused saved method -> ${dns_ip}"
         else
