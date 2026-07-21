@@ -16,6 +16,23 @@ export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
 log "🚀 AdGuard VPN Container Starting..."
 log "🛡️ Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
 
+# =============================================================================
+# Permission Setup
+# =============================================================================
+
+# Ensure /dev/net/tun is accessible (default permissions are usually sufficient)
+if [ -c /dev/net/tun ]; then
+    chmod 666 /dev/net/tun 2>/dev/null || true
+fi
+
+# Ensure data directory exists and is writable
+DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
+if [ ! -d "$DATA_DIR" ]; then
+    mkdir -p "$DATA_DIR" 2>/dev/null || true
+fi
+
+LOG_FILE="${DATA_DIR}/app.log"
+
 REAL_IP="ERROR"
 
 # Get IP before VPN if kill switch is enabled
@@ -66,7 +83,6 @@ log "✅ VPN connected successfully"
 
 log "📄 Setting up log monitoring..."
 
-LOG_FILE="/root/.local/share/adguardvpn-cli/app.log"
 while [ ! -f "$LOG_FILE" ]; do
     sleep 1
 done

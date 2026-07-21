@@ -5,8 +5,11 @@ services:
         restart: unless-stopped
         container_name: adguard-vpn-cli
         env_file: .env
+        environment:
+            - PUID=${PUID:-1000}
+            - PGID=${PGID:-1000}
         volumes:
-            - ./data:/root/.local/share/adguardvpn-cli
+            - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
             test: ping -c 1 www.google.com || exit 1
             interval: 1m

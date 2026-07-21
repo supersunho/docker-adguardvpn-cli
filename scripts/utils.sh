@@ -14,7 +14,7 @@ log() {
 # =============================================================================
 
 get_public_ip() {
-    local IP_METHOD_FILE="/root/.local/share/adguardvpn-cli/ip_method.txt"
+    local IP_METHOD_FILE="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
     local dns_ip=""
     local http_ip=""
     local dns_method=""

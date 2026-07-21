@@ -1,6 +1,8 @@
 FROM ubuntu:24.04 AS base
 
-ENV USER=root                     
+ARG PUID=1000
+ARG PGID=1000
+
 ENV DEBIAN_FRONTEND=noninteractive 
 
 RUN echo "🔍 Setting up Ubuntu 24.04 LTS build environment..." && \
@@ -33,8 +35,21 @@ RUN curl -fsSL -o /tmp/install.sh \
     https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/master/scripts/release/install.sh && \
     sh /tmp/install.sh -v -a y && \
     rm /tmp/install.sh
+# Create non-root user with configurable UID/GID
+RUN groupadd -g ${PGID} appuser && \
+    useradd -m -u ${PUID} -g appuser -s /bin/bash appuser
+
+# Create data directory structure for appuser
+RUN mkdir -p /home/appuser/.local/share/adguardvpn-cli && \
+    chown -R appuser:appuser /home/appuser && \
+    chown -R appuser:appuser /opt/adguardvpn_cli
+
 WORKDIR /opt/adguardvpn_cli
 COPY --chmod=755 ./scripts/*.sh ./scripts/
+
+ENV HOME=/home/appuser
+
+USER appuser
 
 EXPOSE ${ADGUARD_SOCKS5_PORT}
 
