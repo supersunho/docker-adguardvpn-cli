@@ -45,9 +45,11 @@ trap _shutdown_handler TERM INT
 # =============================================================================
 
 export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
+export ADGUARD_CONNECTION_TYPE=${ADGUARD_CONNECTION_TYPE:-TUN}
 
 log INFO "AdGuard VPN Container Starting"
 log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
+log INFO "Connection mode: ${ADGUARD_CONNECTION_TYPE}"
 
 # =============================================================================
 # Permission Setup

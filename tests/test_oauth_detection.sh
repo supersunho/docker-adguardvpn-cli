@@ -112,7 +112,7 @@ MOCK
     result=$(HOME=/tmp \
         ADGUARD_LOG_LEVEL=INFO \
         PATH="$tmpdir:$saved_PATH" \
-        /opt/homebrew/bin/bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
+        bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
 
     export PATH="$saved_PATH"
 
@@ -159,7 +159,7 @@ MOCK
         ADGUARD_LOG_LEVEL=INFO \
         MOCK_TIMEOUT=3 \
         PATH="$tmpdir:$saved_PATH" \
-        /opt/homebrew/bin/bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
+        bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
 
     export PATH="$saved_PATH"
 
@@ -199,7 +199,7 @@ MOCK
     result=$(HOME=/tmp \
         ADGUARD_LOG_LEVEL=INFO \
         PATH="$tmpdir:$saved_PATH" \
-        /opt/homebrew/bin/bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
+        bash "${PROJECT_DIR}/tests/lib/oauth_flow_harness.sh" 2>&1) || true
 
     export PATH="$saved_PATH"
 
