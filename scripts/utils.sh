@@ -17,13 +17,15 @@ _LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
 # Source each module in dependency order.
 # logging.sh must come first since other modules use log().
 # error_handling.sh should be early since it provides die/try/retry.
+# config.sh must come before killswitch_detector.sh because the
+# detector snapshots config values at source time.
 for _module in \
     logging.sh \
     error_handling.sh \
+    config.sh \
     network.sh \
     ip_detection.sh \
     vpn_status.sh \
-    config.sh \
     killswitch_state.sh \
     killswitch_detector.sh \
     killswitch_actions.sh \
