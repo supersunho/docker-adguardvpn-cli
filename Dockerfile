@@ -31,9 +31,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "✅ CA certificates updated"
 
 # Download and install AdGuard VPN CLI
+# Note: install.sh uses set -u and references $USER; we pass it explicitly
+# so the build doesn't fail when USER is unset in the build environment.
 RUN curl -fsSL -o /tmp/install.sh \
     https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/master/scripts/release/install.sh && \
-    sh /tmp/install.sh -v -a y && \
+    USER=root sh /tmp/install.sh -v -a y && \
     rm /tmp/install.sh
 # Create non-root user with configurable UID/GID
 RUN groupadd -g ${PGID} appuser && \
@@ -51,6 +53,6 @@ ENV HOME=/home/appuser
 
 USER appuser
 
-EXPOSE ${ADGUARD_SOCKS5_PORT}
+EXPOSE 1080
 
 ENTRYPOINT ["/opt/adguardvpn_cli/scripts/docker-entrypoint.sh"]
