@@ -22,7 +22,7 @@ _cleanup_and_exit() {
 
     if [ -n "${TAIL_PID:-}" ]; then
         kill "${TAIL_PID}" 2>/dev/null || true
-        [ -n "${TAIL_PID:-}" ] && wait "${TAIL_PID}" || true 2>/dev/null || true
+        wait "${TAIL_PID}" 2>/dev/null || true
     fi
 
     if [ -n "${KILL_PID:-}" ]; then
@@ -54,13 +54,54 @@ trap _shutdown_handler TERM INT
 # ADGUARD_SHOW_LOG=false and ADGUARD_USE_KILL_SWITCH=false.
 supervise_vpn() {
     while true; do
-        if ! adguardvpn-cli status >/dev/null 2>&1; then
+        if ! check_adguard_vpn_status; then
             log ERROR "VPN status check failed — supervisor exiting"
             return 1
         fi
         sleep 60 &
         wait "$!"
     done
+}
+
+# Wait for the primary runtime process while treating log output as auxiliary.
+# Bash 5.1+ is available in the supported Ubuntu base images.
+wait_for_runtime() {
+    if [ -n "${TAIL_PID:-}" ]; then
+        local completed_pid=""
+
+        set +e
+        wait -n -p completed_pid "${SUPERVISE_PID}" "${TAIL_PID}"
+        set -e
+
+        if [ "$completed_pid" = "$SUPERVISE_PID" ]; then
+            log WARN "VPN supervisor exited — container shutting down"
+            _cleanup_and_exit 1
+        fi
+
+        log WARN "VPN log tail exited — continuing with VPN supervisor"
+        TAIL_PID=""
+    fi
+
+    # Block on supervisor (returns when VPN status check fails).
+    wait "${SUPERVISE_PID}" 2>/dev/null || true
+    log WARN "VPN supervisor exited — container shutting down"
+    _cleanup_and_exit 1
+}
+
+# Wait for the kill switch process directly.  The child exits as soon as it
+# detects a VPN failure or IP leak, so polling it with a long sleep would leave
+# the container alive after protection has already failed.
+wait_for_kill_switch() {
+    local kill_switch_exit_code=0
+
+    if wait "${KILL_PID}"; then
+        kill_switch_exit_code=0
+    else
+        kill_switch_exit_code=$?
+    fi
+
+    log WARN "Kill switch process exited (code: ${kill_switch_exit_code}) — container shutting down"
+    _cleanup_and_exit 1
 }
 
 # =============================================================================
@@ -85,23 +126,32 @@ else
     log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
 fi
 
-DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
-if [ ! -d "$DATA_DIR" ]; then
-    if mkdir -p "$DATA_DIR" 2>/dev/null; then
-        log INFO "Created data directory: ${DATA_DIR}"
-    else
-        log WARN "Could not create data directory: ${DATA_DIR}"
-        log WARN "Verify volume mount permissions in docker-compose.yml"
-    fi
-fi
+ensure_data_dir() {
+    local data_dir="$1"
 
-# Verify data directory is writable -- fail fast to prevent silent OAuth loss
-if [ -d "$DATA_DIR" ] && [ ! -w "$DATA_DIR" ]; then
-    current_uid=$(id -u)
-    log_force ERROR "Data directory is not writable: ${DATA_DIR}"
-    log_force ERROR "Run: sudo chown -R ${current_uid}:${current_uid} ${DATA_DIR}"
-    exit 78
-fi
+    if [ ! -d "$data_dir" ]; then
+        if mkdir -p "$data_dir" 2>/dev/null; then
+            log INFO "Created data directory: ${data_dir}"
+        else
+            log_force ERROR "Could not create data directory: ${data_dir}"
+            log_force ERROR "Verify volume mount permissions in docker-compose.yml"
+            exit 78
+        fi
+    fi
+
+    # Fail fast to prevent silent OAuth loss.
+    if [ ! -w "$data_dir" ]; then
+        local current_uid current_gid
+        current_uid=$(id -u)
+        current_gid=$(id -g)
+        log_force ERROR "Data directory is not writable: ${data_dir}"
+        log_force ERROR "Run: sudo chown -R ${current_uid}:${current_gid} ${data_dir}"
+        exit 78
+    fi
+}
+
+DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
+ensure_data_dir "$DATA_DIR"
 
 LOG_FILE="${DATA_DIR}/app.log"
 
@@ -135,9 +185,11 @@ fi
 # =============================================================================
 
 log INFO "Starting VPN connection..."
-/opt/adguardvpn_cli/scripts/init.sh
-
-INIT_EXIT_CODE=$?
+if /opt/adguardvpn_cli/scripts/init.sh; then
+    INIT_EXIT_CODE=0
+else
+    INIT_EXIT_CODE=$?
+fi
 
 if [ "$INIT_EXIT_CODE" -ne 0 ]; then
     log ERROR "VPN initialization failed (exit code: ${INIT_EXIT_CODE})"
@@ -165,16 +217,22 @@ while [ ! -f "$LOG_FILE" ]; do
 done
 unset _LOG_WAIT_MAX _LOG_WAITED
 
-log INFO "Log file ready"
+if [ -f "$LOG_FILE" ]; then
+    log INFO "Log file ready"
 
-if [ "${ADGUARD_SHOW_LOG,,}" = "true" ]; then
-    if [ "${ADGUARD_SHOW_LOG_LEVEL,,}" = "debug" ]; then
-        tail -F "$LOG_FILE" &
-        TAIL_PID=$!
-    else
-        tail -F "$LOG_FILE" | grep --line-buffered -v -i -E '(debug|trace)' 2>/dev/null &
-        TAIL_PID=$!
+    if [ "${ADGUARD_SHOW_LOG,,}" = "true" ]; then
+        if [ "${ADGUARD_SHOW_LOG_LEVEL,,}" = "debug" ]; then
+            tail -F --pid="$$" "$LOG_FILE" &
+            TAIL_PID=$!
+        else
+            # --pid ensures the tail child exits when PID 1 shuts down, even
+            # though the filtered mode uses a pipeline.
+            tail -F --pid="$$" "$LOG_FILE" | grep --line-buffered -v -i -E '(debug|trace)' 2>/dev/null &
+            TAIL_PID=$!
+        fi
     fi
+else
+    log WARN "Continuing without AdGuard VPN log tail"
 fi
 
 # =============================================================================
@@ -211,15 +269,7 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
 
     log INFO "Kill switch activated (PID: ${KILL_PID})"
     log INFO "Kill switch monitoring active"
-
-    while kill -0 "${KILL_PID}" 2>/dev/null; do
-        sleep 60 &
-        wait $!
-        log INFO "Kill switch heartbeat — PID ${KILL_PID} running"
-    done
-
-    log WARN "Kill switch process exited — container shutting down"
-    _cleanup_and_exit 1
+    wait_for_kill_switch
 
 else
     log WARN "Kill Switch DISABLED — container will continue even if VPN fails"
@@ -229,13 +279,5 @@ else
     SUPERVISE_PID=$!
     log INFO "VPN supervisor started (PID: ${SUPERVISE_PID})"
 
-    # Also wait for log tail if it was started
-    if [ -n "${TAIL_PID:-}" ]; then
-        wait "${TAIL_PID}" 2>/dev/null || true
-    fi
-
-    # Block on supervisor (returns when VPN status check fails)
-    wait "${SUPERVISE_PID}" 2>/dev/null || true
-    log WARN "VPN supervisor exited — container shutting down"
-    _cleanup_and_exit 1
+    wait_for_runtime
 fi
