@@ -139,15 +139,6 @@ _config_define_schema() {
         "string" "" \
         "Override bound network interface for VPN (empty = auto)"
 
-    # ---------- User permissions ----------
-    _config_add "PUID" \
-        "positive_int" "1001" \
-        "User ID for the container's app user (default avoids conflict with Ubuntu built-in ubuntu user at 1000)"
-
-    _config_add "PGID" \
-        "positive_int" "1001" \
-        "Group ID for the container's app user (default avoids conflict with Ubuntu built-in ubuntu group at 1000)"
-
     # ---------- Logging ----------
     _config_add "ADGUARD_SHOW_LOG" \
         "bool" "true" \

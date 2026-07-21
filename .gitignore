@@ -1,3 +1,5 @@
 /.env
 .history
 docs
+*.bak
+*.bak2
