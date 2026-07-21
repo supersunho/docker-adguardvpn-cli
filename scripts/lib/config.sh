@@ -344,7 +344,6 @@ config_generate_dotenv() {
         # (derived from the first word of the description when it changes
         #  pattern; this is a simple heuristic.)
         echo "# ${desc}"
-        echo "# Type: ${_CONFIG_TYPE[$key]}  Default: ${_CONFIG_DEFAULT[$key]}"
         echo "${key}=${_CONFIG_DEFAULT[$key]}"
         echo ""
     done
