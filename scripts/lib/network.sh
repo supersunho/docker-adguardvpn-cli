@@ -9,7 +9,7 @@
 #   curl_get <url>              -- Perform an HTTP GET with curl
 #   dig_get <method_args...>    -- Perform a DNS query with dig
 #   socks5_curl_get <url>       -- Perform an HTTP GET via SOCKS5 proxy
-#   network_init_socks          -- Initialize SOCKS5 auth (clear previous, set creds)
+#   network_init_socks          -- Initialize SOCKS5 listen and auth settings
 #   is_socks_mode               -- Check if connection mode is SOCKS
 
 # =============================================================================
@@ -91,8 +91,7 @@ is_socks_mode() {
     [ "$mode" = "socks" ]
 }
 
-# Initialize SOCKS5 authentication.
-# Only runs clear-socks-auth in SOCKS mode per the plan's guidance.
+# Initialize SOCKS5 listen and authentication settings.
 # Usage: network_init_socks
 network_init_socks() {
     if ! is_socks_mode; then
@@ -102,17 +101,20 @@ network_init_socks() {
 
     log INFO "Initializing SOCKS5 proxy configuration"
 
+    adguardvpn-cli config set-socks-host "127.0.0.1"
+    adguardvpn-cli config clear-socks-auth
+
     if [ -n "${ADGUARD_SOCKS5_USERNAME:-}" ]; then
         adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
     fi
     if [ -n "${ADGUARD_SOCKS5_PASSWORD:-}" ]; then
         adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
     fi
-    if [ -n "${ADGUARD_SOCKS5_HOST:-}" ]; then
-        adguardvpn-cli config set-socks-host "$ADGUARD_SOCKS5_HOST"
-    fi
     if [ -n "${ADGUARD_SOCKS5_PORT:-}" ]; then
         adguardvpn-cli config set-socks-port "$ADGUARD_SOCKS5_PORT"
+    fi
+    if [ -n "${ADGUARD_SOCKS5_HOST:-}" ]; then
+        adguardvpn-cli config set-socks-host "$ADGUARD_SOCKS5_HOST"
     fi
 
     log INFO "SOCKS5 proxy configuration complete"

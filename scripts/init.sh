@@ -25,7 +25,62 @@ fi
 # OAuth / Web Authentication
 # =============================================================================
 
-AUTH_FILE="${HOME}/.local/share/adguardvpn-cli/vpn.pid"
+DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
+AUTH_FAILURE_FILE="${DATA_DIR}/.auth-failures"
+
+_authentication_is_available() {
+    local status_output status_exit=0
+    status_output="$(adguardvpn-cli status 2>&1)" || status_exit=$?
+
+    if printf '%s\n' "$status_output" | grep -qiE \
+        'not logged in|authentication required|login required|unauthorized|session expired|invalid session'; then
+        return 1
+    fi
+
+    [ "$status_exit" -eq 0 ] || [ -n "$status_output" ]
+}
+
+_clear_auth_failures() {
+    rm -f "$AUTH_FAILURE_FILE" 2>/dev/null || true
+}
+
+_reset_auth_data() {
+    if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "/" ]; then
+        log_force ERROR "Refusing to reset an unsafe authentication data path"
+        return 1
+    fi
+
+    if ! find "$DATA_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; then
+        log_force ERROR "Could not reset authentication data in ${DATA_DIR}"
+        return 1
+    fi
+
+    log_force WARN "Authentication data reset. A new browser authentication is required."
+    return 0
+}
+
+_record_auth_failure() {
+    local failure_count=0
+
+    if [ -f "$AUTH_FAILURE_FILE" ]; then
+        read -r failure_count < "$AUTH_FAILURE_FILE" || failure_count=0
+    fi
+
+    if ! [[ "$failure_count" =~ ^[0-9]+$ ]]; then
+        failure_count=0
+    fi
+
+    failure_count=$((failure_count + 1))
+
+    if [ "$failure_count" -ge "$ADGUARD_AUTH_RESET_AFTER_FAILURES" ]; then
+        _reset_auth_data
+        return $?
+    fi
+
+    printf '%s\n' "$failure_count" > "$AUTH_FAILURE_FILE"
+    log_force WARN "Authentication failure ${failure_count}/${ADGUARD_AUTH_RESET_AFTER_FAILURES}"
+    return 0
+}
 
 _oauth_login() {
     log_force INFO ""
@@ -98,22 +153,33 @@ _oauth_login() {
 
     kill "$tail_pid" 2>/dev/null || true
     wait "$tail_pid" 2>/dev/null || true
-    rm -f "$temp_file" 2>/dev/null || true
 
     local login_exit=0
     wait "$login_pid" 2>/dev/null && login_exit=$? || login_exit=$?
 
+    local login_output=""
+    login_output="$(cat "$temp_file" 2>/dev/null || true)"
+    rm -f "$temp_file" 2>/dev/null || true
+
     if [ "$timed_out" = true ]; then
         log_force ERROR "Authentication timed out after ${timeout}s"
+        if [ "$url_printed" = true ]; then
+            _record_auth_failure || true
+        fi
         return 1
     fi
 
     if [ "$login_exit" -ne 0 ]; then
         log_force ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
+        if [ "$url_printed" = true ] || printf '%s\n' "$login_output" | grep -qiE \
+            'not logged in|authentication required|login required|unauthorized|session expired|invalid session'; then
+            _record_auth_failure || true
+        fi
         return 1
     fi
 
     log_force INFO "Authentication completed successfully"
+    _clear_auth_failures
     return 0
 }
 
@@ -121,7 +187,7 @@ _oauth_login() {
 # Authentication
 # =============================================================================
 
-if [ -f "$AUTH_FILE" ]; then
+if _authentication_is_available; then
     log_force INFO "Authentication credentials found. Using existing session."
 else
     log_force INFO "No authentication credentials found."
@@ -185,11 +251,7 @@ fi
 # =============================================================================
 
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
-    log INFO "Setting up SOCKS5 proxy credentials"
-    adguardvpn-cli config set-socks-username "$ADGUARD_SOCKS5_USERNAME"
-    adguardvpn-cli config set-socks-password "$ADGUARD_SOCKS5_PASSWORD"
-    adguardvpn-cli config set-socks-host "$ADGUARD_SOCKS5_HOST"
-    adguardvpn-cli config set-socks-port "$ADGUARD_SOCKS5_PORT"
+    network_init_socks
 fi
 
 # =============================================================================

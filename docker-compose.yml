@@ -18,6 +18,7 @@ services:
         devices:
             - /dev/net/tun
         ports:
+            - "1080:1080"
             - 6089:6089
             - 6881:6881
             - 6881:6881/udp
