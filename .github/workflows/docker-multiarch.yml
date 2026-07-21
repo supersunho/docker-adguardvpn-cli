@@ -144,14 +144,15 @@ jobs:
                   echo "└─ 🚀 Build Base Version    : $BUILD_VERSION_BASE"
                   echo ""
 
-                  printf 'source_version=%s\n' "$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
-                  printf 'source_version_clean=%s\n' "$SOURCE_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
-                  printf 'source_version_base=%s\n' "$SOURCE_VERSION_BASE" >> "$GITHUB_OUTPUT"
-                  printf 'source_version_exact=%s\n' "$SOURCE_VERSION_EXACT" >> "$GITHUB_OUTPUT"
-
-                  printf 'build_version=%s\n' "$BUILD_VERSION" >> "$GITHUB_OUTPUT"
-                  printf 'build_version_clean=%s\n' "$BUILD_VERSION_CLEAN" >> "$GITHUB_OUTPUT"
-                  printf 'build_version_base=%s\n' "$BUILD_VERSION_BASE" >> "$GITHUB_OUTPUT"
+                  printf '%s\n' \
+                    "source_version=$SOURCE_VERSION" \
+                    "source_version_clean=$SOURCE_VERSION_CLEAN" \
+                    "source_version_base=$SOURCE_VERSION_BASE" \
+                    "source_version_exact=$SOURCE_VERSION_EXACT" \
+                    "build_version=$BUILD_VERSION" \
+                    "build_version_clean=$BUILD_VERSION_CLEAN" \
+                    "build_version_base=$BUILD_VERSION_BASE" \
+                    >> "$GITHUB_OUTPUT"
 
             - name: 🏗️ Generate build matrix
               id: generate-matrix
@@ -396,14 +397,15 @@ jobs:
 
             - name: 🏷️ Create multi-arch manifests
               run: |
+                  # shellcheck disable=SC2086,SC2296
                   set -euo pipefail
                   VERSION="${{ needs.prepare.outputs.build_version_base }}"
                   echo "📦 Creating multi-arch manifests for version: $VERSION"
 
                   # Verify all three required architectures have digests
-                  REQUIRED_ARCHS="amd64 arm64 armv7"
+                  REQUIRED_ARCHS=(amd64 arm64 armv7)
                   MISSING=""
-                  for arch in $REQUIRED_ARCHS; do
+                  for arch in "${REQUIRED_ARCHS[@]}"; do
                     if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
                       DIGEST=$(cat "/tmp/digests/digests-$arch/digest.txt" | head -1)
                       if [ -n "$DIGEST" ] && [ "$DIGEST" != "FAILED" ]; then
@@ -423,7 +425,7 @@ jobs:
                     exit 1
                   fi
 
-                  echo "🎯 All required architectures available: $REQUIRED_ARCHS"
+                  echo "🎯 All required architectures available: ${REQUIRED_ARCHS[*]}"
 
                   for registry in ghcr dockerhub; do
                     if [ "$registry" = "ghcr" ]; then
@@ -432,23 +434,23 @@ jobs:
                       PREFIX="${{ env.DOCKERHUB_REPO }}"
                     fi
 
-                    ARCH_IMAGES=""
-                    LATEST_ARCH_IMAGES=""
+                    ARCH_IMAGES=()
+                    LATEST_ARCH_IMAGES=()
 
-                    for arch in $REQUIRED_ARCHS; do
-                      ARCH_IMAGES="$ARCH_IMAGES ${PREFIX}:${VERSION}-${arch}"
-                      LATEST_ARCH_IMAGES="$LATEST_ARCH_IMAGES ${PREFIX}:latest-${arch}"
+                    for arch in "${REQUIRED_ARCHS[@]}"; do
+                      ARCH_IMAGES+=("${PREFIX}:${VERSION}-${arch}")
+                      LATEST_ARCH_IMAGES+=("${PREFIX}:latest-${arch}")
                     done
 
                     echo "🏗️ Creating version manifest: ${PREFIX}:${VERSION}"
                     docker buildx imagetools create \
                       --tag "${PREFIX}:${VERSION}" \
-                      $ARCH_IMAGES
+                      "${ARCH_IMAGES[@]}"
 
                     echo "🏗️ Creating latest manifest: ${PREFIX}:latest"
                     docker buildx imagetools create \
                       --tag "${PREFIX}:latest" \
-                      $LATEST_ARCH_IMAGES
+                      "${LATEST_ARCH_IMAGES[@]}"
 
                     echo "✅ Multi-arch manifests created for $registry"
                   done
@@ -469,15 +471,16 @@ jobs:
 
             - name: 📊 Generate comprehensive build summary
               run: |
+                  # shellcheck disable=SC2006,SC2012,SC2086,SC2288
                   AMD64_DIGEST=$(cat /tmp/digests/digests-amd64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
                   ARM64_DIGEST=$(cat /tmp/digests/digests-arm64/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
                   ARMV7_DIGEST=$(cat /tmp/digests/digests-armv7/digest.txt 2>/dev/null | cut -c1-12 || echo "N/A")
 
-                  AMD64_STATUS=$([ -f /tmp/digests/digests-amd64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
-                  ARM64_STATUS=$([ -f /tmp/digests/digests-arm64/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
-                  ARMV7_STATUS=$([ -f /tmp/digests/digests-armv7/digest.txt ] && echo "✅ Success" || echo "❌ Failed")
+                  AMD64_STATUS=$([ -f /tmp/digests/digests-amd64/digest.txt ] && echo "Success" || echo "Failed")
+                  ARM64_STATUS=$([ -f /tmp/digests/digests-arm64/digest.txt ] && echo "Success" || echo "Failed")
+                  ARMV7_STATUS=$([ -f /tmp/digests/digests-armv7/digest.txt ] && echo "Success" || echo "Failed")
 
-                  BUILD_COUNT=$(ls /tmp/digests 2>/dev/null | wc -l || echo "0")
+                  BUILD_COUNT=$(find /tmp/digests -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
                   BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
 
                   cat >> "$GITHUB_STEP_SUMMARY" << MJEOF
@@ -496,23 +499,23 @@ jobs:
                   ### 📦 Container Image Digests
                   | Architecture | Digest | Status |
                   |--------------|--------|--------|
-                  | **amd64** | `${AMD64_DIGEST}...` | ${AMD64_STATUS} |
-                  | **arm64** | `${ARM64_DIGEST}...` | ${ARM64_STATUS} |
-                  | **armv7** | `${ARMV7_DIGEST}...` | ${ARMV7_STATUS} |
+                  | **amd64** | \`${AMD64_DIGEST}...\` | ${AMD64_STATUS} |
+                  | **arm64** | \`${ARM64_DIGEST}...\` | ${ARM64_STATUS} |
+                  | **armv7** | \`${ARMV7_DIGEST}...\` | ${ARMV7_STATUS} |
 
                   ### 🐳 Published Container Registries with Auto-Detection
 
                   #### 🎯 Docker Hub - Smart Architecture Detection
-                  ```
+                  \`\`\`
                   docker pull ${{ env.DOCKERHUB_REPO }}:latest
                   docker pull ${{ env.DOCKERHUB_REPO }}:${{ needs.prepare.outputs.build_version_base }}
-                  ```
+                  \`\`\`
 
                   #### 🔄 GitHub Container Registry (GHCR) - Smart Architecture Detection
-                  ```
+                  \`\`\`
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.build_version_base }}
-                  ```
+                  \`\`\`
 
                   **🎉 AdGuard VPN CLI multi-architecture build completed successfully!**
                   **📊 Total Architectures Built**: $BUILD_COUNT
