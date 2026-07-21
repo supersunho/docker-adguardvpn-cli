@@ -20,11 +20,11 @@ ks_heartbeat() {
 
     local status_icon
     case "$_KS_CURRENT_STATE" in
-        $KS_STANDBY)      status_icon="⏳ STANDBY" ;;
-        $KS_PROTECTED)    status_icon="🔒 PROTECTED" ;;
-        $KS_LEAK_WARNING) status_icon="⚠️  LEAK WARNING" ;;
-        $KS_TERMINATING)  status_icon="🛑 TERMINATING" ;;
-        *)                status_icon="❓ UNKNOWN" ;;
+        "$KS_STANDBY")      status_icon="⏳ STANDBY" ;;
+        "$KS_PROTECTED")    status_icon="🔒 PROTECTED" ;;
+        "$KS_LEAK_WARNING") status_icon="⚠️  LEAK WARNING" ;;
+        "$KS_TERMINATING")  status_icon="🛑 TERMINATING" ;;
+        *)                  status_icon="❓ UNKNOWN" ;;
     esac
 
     log INFO "Kill switch | ${status_icon} | VPN IP: ${KS_VPN_IP:-unknown} | Checks: ${checks} | Uptime: ${uptime}s"

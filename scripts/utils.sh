@@ -38,39 +38,10 @@ done
 unset _module _path _LIB_DIR
 
 # =============================================================================
-# Legacy compatibility wrappers
+# Legacy compatibility — no-op
 # =============================================================================
 #
-# The following aliases map the old function names from the monolith
-# utils.sh onto the new modular implementations so that existing
-# callers (docker-entrypoint.sh, init.sh, killswitch.sh) work
-# unchanged during the transition.
-
-# log()  --  the old signature used a single message and printed
-#            "[caller] message".  The new log() in logging.sh uses
-#            "[timestamp] [LEVEL] [caller] message" and always expects
-#            a level as the first argument.
-#
-# For backward compatibility, we keep a thin wrapper that treats
-# a bare message as level INFO.
-_log_legacy() {
-    # If the first argument looks like a level (DEBUG/INFO/WARN/ERROR
-    # case-insensitive), pass through to the real log.
-    case "${1,,}" in
-        debug|info|warn|error)
-            log "$@"
-            ;;
-        *)
-            log INFO "$@"
-            ;;
-    esac
-}
-
-# Override the log function loaded from logging.sh so old-style
-# single-argument calls still work.  Scripts that use the new
-# two-argument form also work since we detect the level keyword.
-#
-# This keeps git blame clean during the transition.
-log() {
-    _log_legacy "$@"
-}
+# The log() function in lib/logging.sh already handles both modern
+# (log INFO "message") and legacy (log "message") calling conventions
+# natively.  No wrapper needed here — callers that source this file
+# get the correct behaviour directly.

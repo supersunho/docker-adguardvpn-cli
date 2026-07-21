@@ -19,6 +19,7 @@ _CONFIG_KEYS=()
 for _module in logging.sh config.sh; do
     _path="${SCRIPT_DIR}/lib/${_module}"
     if [ -f "$_path" ]; then
+        # shellcheck source=./lib/logging.sh
         source "$_path"
     fi
 done

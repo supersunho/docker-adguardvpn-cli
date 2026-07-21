@@ -27,7 +27,7 @@ setup_traps
 
 _ks_shutdown() {
     log INFO "Kill switch received shutdown signal"
-    ks_set_state $KS_TERMINATING
+    ks_set_state "$KS_TERMINATING"
     exit 0
 }
 
@@ -55,7 +55,7 @@ if ! ks_wait_for_vpn_tunnel; then
     ks_terminate "VPN tunnel did not activate within ${KS_MAX_WAIT_TIME}s"
 fi
 
-ks_set_state $KS_PROTECTED
+ks_set_state "$KS_PROTECTED"
 
 # =============================================================================
 # Tracking variables
@@ -104,10 +104,10 @@ while true; do
         ks_log_leak "$_KS_LEAK_COUNT"
 
         case "$_KS_CURRENT_STATE" in
-            $KS_PROTECTED)
-                ks_set_state $KS_LEAK_WARNING
+            "$KS_PROTECTED")
+                ks_set_state "$KS_LEAK_WARNING"
                 ;;
-            $KS_LEAK_WARNING)
+            "$KS_LEAK_WARNING")
                 # Already in warning — check tolerance
                 if [ "${KS_LEAK_WARNING_ONLY,,}" = "true" ]; then
                     log WARN "Warning-only mode: leak persists"
@@ -115,7 +115,7 @@ while true; do
                     ks_terminate "Leak tolerance exceeded (${_KS_LEAK_COUNT} > ${KS_MAX_LEAK_TOLERANCE})"
                 fi
                 ;;
-            $KS_STANDBY)
+            "$KS_STANDBY")
                 # Tunnel never fully activated — treat as leak
                 ks_terminate "Original IP detected before VPN established"
                 ;;
@@ -123,15 +123,15 @@ while true; do
     else
         # ---- PROTECTED SCENARIO ----
         case "$_KS_CURRENT_STATE" in
-            $KS_LEAK_WARNING)
+            "$KS_LEAK_WARNING")
                 ks_log_recovery
-                ks_set_state $KS_PROTECTED
+                ks_set_state "$KS_PROTECTED"
                 ;;
-            $KS_STANDBY)
+            "$KS_STANDBY")
                 # First time we see a non-real IP after initial wait
                 # (fallback in case ks_wait_for_vpn_tunnel didn't catch it)
                 if [ -n "$KS_CURRENT_IP" ] && [ "$KS_CURRENT_IP" != "$KS_REAL_IP" ]; then
-                    ks_set_state $KS_PROTECTED
+                    ks_set_state "$KS_PROTECTED"
                 fi
                 ;;
         esac

@@ -89,6 +89,7 @@ _oauth_login() {
     local timeout=1800  # 30 minutes max for auth
     local elapsed=0
     local url_printed=false
+    local timed_out=false
 
     # Monitor the login process (not tail — its PID is tracked separately)
     while kill -0 "$login_pid" 2>/dev/null; do
@@ -119,7 +120,8 @@ _oauth_login() {
         elapsed=$((elapsed + 5))
 
         if [ "$elapsed" -ge "$timeout" ]; then
-            log WARN "Login timed out after ${timeout}s"
+            timed_out=true
+            log WARN "Login timed out after ${timeout}s — user did not authenticate in time"
             kill "$login_pid" 2>/dev/null || true
             break
         fi
@@ -131,13 +133,20 @@ _oauth_login() {
 
     rm -f "$temp_file" 2>/dev/null || true
 
-    # Collect the actual exit code of adguardvpn-cli login
-    wait "$login_pid" 2>/dev/null
-    local login_exit=$?
+    # Collect the actual exit code of adguardvpn-cli login.
+    # The &&/|| pattern captures the exit code while preventing set -e from aborting
+    # on non-zero (e.g. 143 when we killed the process ourselves).
+    local login_exit=0
+    wait "$login_pid" 2>/dev/null && login_exit=$? || login_exit=$?
 
-    # Exit 143 = SIGTERM from our timeout, which is acceptable
-    # Any other non-zero exit = actual failure
-    if [ "$login_exit" -ne 0 ] && [ "$login_exit" -ne 143 ]; then
+    # Timeout from our own SIGTERM — user never authenticated
+    if [ "$timed_out" = true ]; then
+        log ERROR "Authentication timed out after ${timeout}s"
+        return 1
+    fi
+
+    # The process exited on its own — check its exit code
+    if [ "$login_exit" -ne 0 ]; then
         log ERROR "adguardvpn-cli login failed (exit code: ${login_exit})"
         return 1
     fi
