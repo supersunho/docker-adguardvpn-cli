@@ -23,7 +23,7 @@ _cleanup_and_exit() {
 
     if [ -n "${TAIL_PID:-}" ]; then
         kill "${TAIL_PID}" 2>/dev/null || true
-        wait "${TAIL_PID}" 2>/dev/null || true
+        [ -n "${TAIL_PID:-}" ] && wait "${TAIL_PID}" || true 2>/dev/null || true
     fi
 
     if [ -n "${KILL_PID:-}" ]; then
@@ -144,8 +144,8 @@ log INFO "Log file ready"
 
 # Log file tail: when SHOW_LOG is true, relay AdGuard CLI log to container output.
 # DEBUG level shows raw output; INFO/WARN/ERROR suppress debug/trace noise.
-if [ "${ADGUARD_SHOW_LOG:-true}" = "true" ]; then
-    if [ "${ADGUARD_SHOW_LOG_LEVEL:-INFO}" = "DEBUG" ]; then
+if [ "${ADGUARD_SHOW_LOG,,}" = "true" ]; then
+    if [ "${ADGUARD_SHOW_LOG_LEVEL,,}" = "debug" ]; then
         tail -F "$LOG_FILE" &
         TAIL_PID=$!
     else
@@ -215,6 +215,6 @@ else
     log WARN "Kill Switch DISABLED — container will continue even if VPN fails"
     log INFO "Monitoring AdGuard VPN log only"
 
-    # Keep container alive with log monitoring
-    wait "${TAIL_PID}"
+    # Keep container alive with log monitoring (TAIL_PID may be unset if ADGUARD_SHOW_LOG=false)
+    [ -n "${TAIL_PID:-}" ] && wait "${TAIL_PID}" || true
 fi

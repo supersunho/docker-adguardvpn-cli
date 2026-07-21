@@ -68,7 +68,7 @@ _log_real() {
     fi
 
     # ADGUARD_SHOW_LOG=false suppresses all container output
-    if [ "${ADGUARD_SHOW_LOG:-true}" = "false" ]; then
+    if [ "${ADGUARD_SHOW_LOG,,}" = "false" ]; then
         return 0  # Log output disabled
     fi
 
