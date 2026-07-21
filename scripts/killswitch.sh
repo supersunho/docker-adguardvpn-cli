@@ -85,31 +85,37 @@ while true; do
 
     # 4. State machine logic
     if ks_is_leak; then
-        _KS_LEAK_COUNT=$((_KS_LEAK_COUNT + 1))
-        ks_log_leak "$_KS_LEAK_COUNT"
+        # ---- LEAK SCENARIO ----
+        # Record the leak — ks_record_leak compares count vs tolerance
+        # and returns non-zero when termination is required.
+        if ! ks_record_leak "$KS_MAX_LEAK_TOLERANCE" "$KS_LEAK_WARNING_ONLY"; then
+            ks_terminate "Leak tolerance exceeded (${_KS_LEAK_COUNT} > ${KS_MAX_LEAK_TOLERANCE})"
+        fi
 
+        # Leak is within tolerance — transition state if needed
         case "$_KS_CURRENT_STATE" in
             "$KS_PROTECTED")
                 ks_set_state "$KS_LEAK_WARNING"
+                ks_log_leak "$_KS_LEAK_COUNT"
                 ;;
             "$KS_LEAK_WARNING")
-                if [ "${KS_LEAK_WARNING_ONLY,,}" = "true" ]; then
-                    log WARN "Warning-only mode: leak persists"
-                elif [ "$_KS_LEAK_COUNT" -gt "$KS_MAX_LEAK_TOLERANCE" ]; then
-                    ks_terminate "Leak tolerance exceeded (${_KS_LEAK_COUNT} > ${KS_MAX_LEAK_TOLERANCE})"
-                fi
+                # Already in warning, leak persists — logged by ks_record_leak
+                ks_log_leak "$_KS_LEAK_COUNT"
                 ;;
             "$KS_STANDBY")
                 ks_terminate "Original IP detected before VPN established"
                 ;;
         esac
     else
+        # ---- PROTECTED SCENARIO ----
         case "$_KS_CURRENT_STATE" in
             "$KS_LEAK_WARNING")
+                ks_clear_leak_count
                 ks_log_recovery
                 ks_set_state "$KS_PROTECTED"
                 ;;
             "$KS_STANDBY")
+                # First time we see a non-real IP after initial wait
                 if [ -n "$KS_CURRENT_IP" ] && [ "$KS_CURRENT_IP" != "$KS_REAL_IP" ]; then
                     ks_set_state "$KS_PROTECTED"
                 fi
