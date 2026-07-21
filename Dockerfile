@@ -46,8 +46,13 @@ RUN mkdir -p /home/appuser/.local/share/adguardvpn-cli && \
     chown -R appuser:appuser /home/appuser && \
     chown -R appuser:appuser /opt/adguardvpn_cli
 
+# Grant appuser passwordless sudo (required for TUN mode in container)
+# adguardvpn-cli internally calls sudo for TUN interface setup; using NOPASSWD:ALL
+# is standard for Docker containers where the user already has --cap-add NET_ADMIN.
+RUN echo "appuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
 WORKDIR /opt/adguardvpn_cli
-COPY --chmod=755 ./scripts/*.sh ./scripts/
+COPY --chmod=755 ./scripts/ ./scripts/
 
 ENV HOME=/home/appuser
 
