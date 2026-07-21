@@ -3,8 +3,7 @@
 # AdGuard VPN -- .env.example generator
 #
 # Reads the config schema from lib/config.sh and writes
-# a complete .env.example file with all variables, types,
-# defaults, and descriptions.
+# a complete .env.example file with all variables and descriptions.
 #
 # Usage:
 #   scripts/generate-dotenv.sh > .env.example
