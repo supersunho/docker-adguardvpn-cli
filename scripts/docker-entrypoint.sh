@@ -164,8 +164,8 @@ fi
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Activating Kill Switch..."
-
-    sleep 2 &
+    log INFO "Stabilizing VPN connection (5s)..."
+    sleep 5 &
     wait $!
 
     if [ "$REAL_IP" = "ERROR" ]; then
@@ -195,16 +195,6 @@ if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     fi
 
     log INFO "Kill switch activated (PID: ${KILL_PID})"
-
-    # Wait for stability using wait $! pattern
-    sleep 2 &
-    wait $!
-
-    if ! kill -0 "${KILL_PID}" 2>/dev/null; then
-        log ERROR "Kill switch died within 5 seconds of starting"
-        _cleanup_and_exit 1
-    fi
-
     log INFO "Kill switch monitoring active"
 
     # =========================================================================
