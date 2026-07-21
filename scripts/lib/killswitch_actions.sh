@@ -70,6 +70,7 @@ ks_terminate() {
 # Summary log every N checks (e.g. every 20 checks for periodic summary).
 # Usage: ks_print_summary <total_checks> <leak_count> <uptime>
 ks_print_summary() {
+    [ "${ADGUARD_SHOW_SUMMARY:-true}" != "true" ] && return 0
     local checks="$1" leaks="$2" uptime="$3"
     local state_name
     state_name=$(ks_get_state_name)

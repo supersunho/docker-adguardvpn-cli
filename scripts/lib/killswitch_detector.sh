@@ -130,7 +130,9 @@ ks_wait_for_vpn_tunnel() {
 
             # Show progress every 5s so the user knows we're waiting
             if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
-                log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
+                if [ "${ADGUARD_SHOW_LOG:-true}" = "true" ]; then
+                    log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
+                fi
             fi
         else
             log DEBUG "VPN not connected yet..."
