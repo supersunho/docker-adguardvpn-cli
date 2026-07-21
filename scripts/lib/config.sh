@@ -63,8 +63,8 @@ _config_define_schema() {
         "Kill switch check interval in seconds"
 
     _config_add "ADGUARD_MAX_LEAK_TOLERANCE" \
-        "positive_int" "0" \
-        "Number of leak detections before termination (0 = immediate)"
+        "non_negative_int" "0" \
+        "Number of leak detections before termination (0 = immediate termination on first leak)"
 
     _config_add "ADGUARD_LEAK_WARNING_ONLY" \
         "bool" "false" \
@@ -146,12 +146,12 @@ _config_define_schema() {
 
     # ---------- User permissions ----------
     _config_add "PUID" \
-        "positive_int" "1000" \
-        "User ID for the container's app user"
+        "positive_int" "1001" \
+        "User ID for the container's app user (default avoids conflict with Ubuntu built-in ubuntu user at 1000)"
 
     _config_add "PGID" \
-        "positive_int" "1000" \
-        "Group ID for the container's app user"
+        "positive_int" "1001" \
+        "Group ID for the container's app user (default avoids conflict with Ubuntu built-in ubuntu group at 1000)"
 
     # ---------- Logging ----------
     _config_add "ADGUARD_LOG_LEVEL" \
@@ -223,6 +223,12 @@ config_validate() {
             positive_int)
                 if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt 1 ]; then
                     log ERROR "${key}: must be a positive integer (got '${val}')"
+                    err=1
+                fi
+                ;;
+            non_negative_int)
+                if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt 0 ]; then
+                    log ERROR "${key}: must be a non-negative integer (got '${val}')"
                     err=1
                 fi
                 ;;
