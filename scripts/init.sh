@@ -29,7 +29,7 @@ export ADGUARD_TUN_ROUTING_MODE=${ADGUARD_TUN_ROUTING_MODE:-"AUTO"}
 export ADGUARD_BOUND_IF_OVERRIDE=${ADGUARD_BOUND_IF_OVERRIDE:-""}
 
 # Check if authentication already exists
-AUTH_FILE="/root/.local/share/adguardvpn-cli/vpn.pid"
+AUTH_FILE="${HOME}/.local/share/adguardvpn-cli/vpn.pid"
 if [ -f "$AUTH_FILE" ]; then
     log "🔑 Authentication credentials found. Using existing session."
 else
