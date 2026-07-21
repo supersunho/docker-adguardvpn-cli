@@ -38,4 +38,4 @@ COPY --chmod=755 ./scripts/*.sh ./scripts/
 
 EXPOSE ${ADGUARD_SOCKS5_PORT}
 
-ENTRYPOINT ["sh", "-c", "/opt/adguardvpn_cli/scripts/docker-entrypoint.sh"]
+ENTRYPOINT ["/opt/adguardvpn_cli/scripts/docker-entrypoint.sh"]
