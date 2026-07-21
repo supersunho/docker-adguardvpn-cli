@@ -249,7 +249,6 @@ jobs:
                   install: true
 
             - name: 🔑 Login to GHCR
-              if: steps.check-images.outputs.build_image == 'true'
               uses: docker/login-action@v3
               with:
                   registry: ${{ env.REGISTRY }}
@@ -325,15 +324,30 @@ jobs:
 
                   echo "🎉 Verification completed for ${{ matrix.arch }}!"
 
-            - name: 📄 Export digest
-              if: steps.check-images.outputs.build_image == 'true'
+            - name: 📄 Export or resolve digest
               run: |
+                  set -euo pipefail
                   mkdir -p /tmp/digests/${{ matrix.arch }}
-                  echo "${{ steps.build.outputs.digest }}" > /tmp/digests/${{ matrix.arch }}/digest.txt
-                  echo "📝 Digest saved for ${{ matrix.arch }}"
+                  if [ "${{ steps.check-images.outputs.build_image }}" = "true" ] && [ -n "${{ steps.build.outputs.digest }}" ]; then
+                    # Build path: use the digest from the build output
+                    echo "${{ steps.build.outputs.digest }}" > /tmp/digests/${{ matrix.arch }}/digest.txt
+                    echo "📝 Using build digest for ${{ matrix.arch }}"
+                  else
+                    # Skip path: resolve the existing image digest from the registry
+                    echo "🔍 Resolving existing image digest for ${{ matrix.arch }}..."
+                    IMAGE_TAG="${{ needs.prepare.outputs.build_version_base }}-${{ matrix.arch }}"
+                    IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+                    DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+                    if [ -n "$DIGEST" ]; then
+                      echo "$DIGEST" > /tmp/digests/${{ matrix.arch }}/digest.txt
+                      echo "📝 Resolved digest for existing ${{ matrix.arch }} image: ${DIGEST}"
+                    else
+                      echo "❌ Could not resolve digest for ${{ matrix.arch }} (image may not exist in registry)"
+                      exit 1
+                    fi
+                  fi
 
             - name: 📤 Upload digest artifact
-              if: steps.check-images.outputs.build_image == 'true'
               uses: actions/upload-artifact@v4
               with:
                   name: digests-${{ matrix.arch }}
@@ -383,25 +397,34 @@ jobs:
 
             - name: 🏷️ Create multi-arch manifests
               run: |
+                  set -euo pipefail
                   VERSION="${{ needs.prepare.outputs.build_version_base }}"
                   echo "📦 Creating multi-arch manifests for version: $VERSION"
 
-                  AVAILABLE_ARCHS=""
-                  for arch in amd64 arm64 armv7; do
+                  # Verify all three required architectures have digests
+                  REQUIRED_ARCHS="amd64 arm64 armv7"
+                  MISSING=""
+                  for arch in $REQUIRED_ARCHS; do
                     if [ -f "/tmp/digests/digests-$arch/digest.txt" ]; then
-                      AVAILABLE_ARCHS="$AVAILABLE_ARCHS $arch"
-                      echo "✅ Confirmed $arch image availability"
+                      DIGEST=$(cat "/tmp/digests/digests-$arch/digest.txt" | head -1)
+                      if [ -n "$DIGEST" ] && [ "$DIGEST" != "FAILED" ]; then
+                        echo "✅ Confirmed $arch image: ${DIGEST}"
+                      else
+                        echo "❌ $arch digest is empty or marked failed"
+                        MISSING="$MISSING $arch"
+                      fi
                     else
-                      echo "⚠️ $arch digest not found, skipping"
+                      echo "❌ $arch digest artifact not found"
+                      MISSING="$MISSING $arch"
                     fi
                   done
 
-                  if [ -z "$AVAILABLE_ARCHS" ]; then
-                    echo "❌ No architecture images found, cannot create manifests"
+                  if [ -n "$MISSING" ]; then
+                    echo "❌ Cannot create manifests — missing architectures:$MISSING"
                     exit 1
                   fi
 
-                  echo "🎯 Available architectures:$AVAILABLE_ARCHS"
+                  echo "🎯 All required architectures available: $REQUIRED_ARCHS"
 
                   for registry in ghcr dockerhub; do
                     if [ "$registry" = "ghcr" ]; then
@@ -413,7 +436,7 @@ jobs:
                     ARCH_IMAGES=""
                     LATEST_ARCH_IMAGES=""
 
-                    for arch in $AVAILABLE_ARCHS; do
+                    for arch in $REQUIRED_ARCHS; do
                       ARCH_IMAGES="$ARCH_IMAGES ${PREFIX}:${VERSION}-${arch}"
                       LATEST_ARCH_IMAGES="$LATEST_ARCH_IMAGES ${PREFIX}:latest-${arch}"
                     done
