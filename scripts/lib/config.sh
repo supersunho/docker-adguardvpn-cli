@@ -36,6 +36,10 @@ _config_define_schema() {
         "Connection mode: TUN (kernel-level tunnel) or SOCKS (SOCKS5 proxy)" \
         "TUN,SOCKS"
 
+    _config_add "ADGUARD_AUTH_RESET_AFTER_FAILURES" \
+        "positive_int" "3" \
+        "Consecutive authentication failures before resetting the data directory"
+
     # ---------- SOCKS proxy ----------
     _config_add "ADGUARD_SOCKS5_USERNAME" \
         "string" "username" \

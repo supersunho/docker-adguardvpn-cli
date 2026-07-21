@@ -105,6 +105,7 @@ docker compose up -d
     - Open the link in your browser and complete authentication
     - Wait a moment for the process to continue automatically
     - **Note**: If Two-Factor Authentication (2FA) is enabled on your account, you may experience issues with this login process.
+    - If authentication fails three consecutive times, the persisted AdGuard data is reset and the browser flow is requested again. Adjust `ADGUARD_AUTH_RESET_AFTER_FAILURES` if needed.
 
 2. **Volume Mount**: The container mounts `./data` directory to persist authentication credentials across container restarts. The data directory is located at `/home/appuser/.local/share/adguardvpn-cli/` inside the container.
 
@@ -135,6 +136,7 @@ services:
         devices:
             - /dev/net/tun
         ports:
+            - "1080:1080"
             - 6089:6089
             - 6881:6881
             - 6881:6881/udp
@@ -165,6 +167,7 @@ services:
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | --------------------------- |
 | ADGUARD_CONNECTION_LOCATION            | VPN server location code                                                                                                                         | JP            | e.g. JP, US, SG, NL         |
 | ADGUARD_CONNECTION_TYPE                | VPN operating mode                                                                                                                               | TUN           | TUN / SOCKS                 |
+| ADGUARD_AUTH_RESET_AFTER_FAILURES      | Consecutive authentication failures before resetting the data directory                                                                         | 3             | Positive integer            |
 | ADGUARD_SOCKS5_USERNAME                | SOCKS5 proxy username                                                                                                                            | username      |                             |
 | ADGUARD_SOCKS5_PASSWORD                | SOCKS5 proxy password                                                                                                                            | password      |                             |
 | ADGUARD_SOCKS5_HOST                    | SOCKS5 proxy host address                                                                                                                        | 127.0.0.1     | IPv4 address                |
@@ -197,7 +200,7 @@ services:
 
 > [!IMPORTANT]
 >
-> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, you need to protect the proxy with a username and password.
+> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, protect the proxy with a username and password. Use `0.0.0.0` to listen on all container interfaces; this is a bind address, not an address to use as the proxy destination. Publish port `1080` (or your configured port) with Docker before connecting from the host.
 > - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
 > - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
 > - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
