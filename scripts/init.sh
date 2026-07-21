@@ -1,7 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 
 # Import utility functions
 source /opt/adguardvpn_cli/scripts/utils.sh
+setup_traps
 
 # export ADGUARD_USERNAME=${ADGUARD_USERNAME:-"username"}
 # export ADGUARD_PASSWORD=${ADGUARD_PASSWORD:-"password"}

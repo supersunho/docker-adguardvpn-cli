@@ -1,11 +1,44 @@
 #!/bin/bash
+set -euo pipefail
 
 # =============================================================================
-# AdGuard VPN Container Entry Point Script - Minimal Logging Version
+# AdGuard VPN Container Entry Point Script
 # =============================================================================
 
 # Import utility functions
 source /opt/adguardvpn_cli/scripts/utils.sh
+
+# Enable error handling
+setup_traps
+
+# =============================================================================
+# Signal handling
+# =============================================================================
+
+# Cleanup function: kill children and exit gracefully on SIGTERM/SIGINT.
+# Using the wait $! pattern below ensures traps interrupt sleep immediately.
+_cleanup_and_exit() {
+    local exit_code="${1:-0}"
+    log INFO "Shutting down..."
+
+    if [ -n "${TAIL_PID:-}" ]; then
+        kill "${TAIL_PID}" 2>/dev/null || true
+        wait "${TAIL_PID}" 2>/dev/null || true
+    fi
+
+    if [ -n "${KILL_PID:-}" ]; then
+        kill "${KILL_PID}" 2>/dev/null || true
+        wait "${KILL_PID}" 2>/dev/null || true
+    fi
+
+    exit "$exit_code"
+}
+
+_shutdown_handler() {
+    _cleanup_and_exit 0
+}
+
+trap _shutdown_handler TERM INT
 
 # =============================================================================
 # Configuration Setup
@@ -13,81 +46,96 @@ source /opt/adguardvpn_cli/scripts/utils.sh
 
 export ADGUARD_USE_KILL_SWITCH=${ADGUARD_USE_KILL_SWITCH:-true}
 
-log "🚀 AdGuard VPN Container Starting..."
-log "🛡️ Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
+log INFO "AdGuard VPN Container Starting"
+log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
 
 # =============================================================================
 # Permission Setup
 # =============================================================================
 
-# Ensure /dev/net/tun is accessible (default permissions are usually sufficient)
+# Ensure /dev/net/tun is accessible
 if [ -c /dev/net/tun ]; then
-    chmod 666 /dev/net/tun 2>/dev/null || true
+    if chmod 666 /dev/net/tun 2>/dev/null; then
+        log DEBUG "/dev/net/tun permissions set to 666"
+    else
+        log INFO "/dev/net/tun already accessible"
+    fi
+else
+    log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
 fi
 
 # Ensure data directory exists and is writable
 DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
 if [ ! -d "$DATA_DIR" ]; then
-    mkdir -p "$DATA_DIR" 2>/dev/null || true
+    if mkdir -p "$DATA_DIR" 2>/dev/null; then
+        log INFO "Created data directory: ${DATA_DIR}"
+    else
+        log WARN "Could not create data directory: ${DATA_DIR}"
+        log WARN "Verify volume mount permissions in docker-compose.yml"
+    fi
+fi
+
+# Verify data directory is writable
+if [ -d "$DATA_DIR" ] && [ ! -w "$DATA_DIR" ]; then
+    log WARN "Data directory is not writable by current user ($(id -un 2>/dev/null || echo 'unknown'))"
+    log WARN "OAuth tokens and VPN state will not persist across restarts"
 fi
 
 LOG_FILE="${DATA_DIR}/app.log"
 
+# =============================================================================
+# Pre-VPN IP detection (for kill switch)
+# =============================================================================
+
 REAL_IP="ERROR"
 
-# Get IP before VPN if kill switch is enabled
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
-    log "📡 Getting current IP..."
-    
-    # Detect connection mode for appropriate IP detection method
-    local_connection_mode="${ADGUARD_CONNECTION_TYPE,,}"
-    
-    if [ "$local_connection_mode" = "socks" ]; then
-        # For SOCKS mode, use direct IP detection before VPN connection
-        # since SOCKS proxy isn't available yet
-        log "📡 SOCKS mode detected - using direct IP detection before VPN connection"
+    log INFO "Detecting current IP before VPN..."
+
+    if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+        log INFO "SOCKS mode: using direct IP detection"
         REAL_IP=$(get_public_ip_direct 2>/dev/null) || REAL_IP="ERROR"
     else
-        # For TUN mode, use normal IP detection function
-        # Use the robust IP detection function from utils.sh with error handling
         REAL_IP=$(get_public_ip 2>/dev/null) || REAL_IP="ERROR"
     fi
-    
-    # Validate that we got a valid IP address
+
     if [ "$REAL_IP" = "ERROR" ] || [ -z "$REAL_IP" ]; then
-        log "🚨 Failed to get current IP address before VPN connection!"
-        log "🚨 Please ensure network connectivity before starting VPN with kill switch"
+        log ERROR "Failed to detect current IP before VPN connection"
+        log ERROR "Ensure network connectivity before starting VPN with kill switch"
         exit 1
     fi
+
+    log INFO "Real IP recorded: ${REAL_IP}"
 fi
 
 # =============================================================================
 # VPN Initialization
 # =============================================================================
 
-log "🔗 Starting VPN connection..."
+log INFO "Starting VPN connection..."
 /opt/adguardvpn_cli/scripts/init.sh
 
 INIT_EXIT_CODE=$?
 
 if [ "$INIT_EXIT_CODE" -ne 0 ]; then
-    log "🚨 VPN initialization failed (code: $INIT_EXIT_CODE)"
-    exit $INIT_EXIT_CODE
+    log ERROR "VPN initialization failed (exit code: ${INIT_EXIT_CODE})"
+    exit "$INIT_EXIT_CODE"
 fi
 
-log "✅ VPN connected successfully"
+log INFO "VPN connected successfully"
 
 # =============================================================================
 # Log File Setup
 # =============================================================================
 
-log "📄 Setting up log monitoring..."
+log INFO "Waiting for AdGuard VPN log file..."
 
 while [ ! -f "$LOG_FILE" ]; do
-    sleep 1
+    sleep 1 &
+    wait $!
 done
 
-log "✅ Log file ready"
+log INFO "Log file ready"
 
 # Start background log monitoring
 tail -F "$LOG_FILE" &
@@ -98,92 +146,72 @@ TAIL_PID=$!
 # =============================================================================
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
-    log "🛡️ Activating Kill Switch..."
-    sleep 5;
-    
-    # Validate IP detection
+    log INFO "Activating Kill Switch..."
+
+    sleep 5 &
+    wait $!
+
     if [ "$REAL_IP" = "ERROR" ]; then
-        log "🚨 Failed to get IP address!"
-        kill "${TAIL_PID}" 2>/dev/null
-        exit 1
+        log ERROR "Failed to get IP address for kill switch"
+        _cleanup_and_exit 1
     fi
-    
-    log "🌐 Monitoring IP: $REAL_IP"
-    
+
     # Check if kill switch script exists
     if [ ! -f /opt/adguardvpn_cli/scripts/killswitch.sh ]; then
-        log "🚨 Kill switch script not found!"
-        kill "${TAIL_PID}" 2>/dev/null
-        exit 1
+        log ERROR "Kill switch script not found"
+        _cleanup_and_exit 1
     fi
-    
-    # Make executable if needed
+
+    # Ensure executable
     [ ! -x /opt/adguardvpn_cli/scripts/killswitch.sh ] && chmod +x /opt/adguardvpn_cli/scripts/killswitch.sh
-    
-    # Export for kill switch script
+
     export REAL_IP_BEFORE_VPN="$REAL_IP"
-    
-    # Start kill switch
+
+    # Start kill switch in background
     /opt/adguardvpn_cli/scripts/killswitch.sh "$REAL_IP" &
     KILL_PID=$!
-    
+
     # Validate kill switch started
     if ! kill -0 "${KILL_PID}" 2>/dev/null; then
-        log "🚨 Kill switch failed to start!"
-        kill "${TAIL_PID}" 2>/dev/null
-        exit 1
+        log ERROR "Kill switch failed to start"
+        _cleanup_and_exit 1
     fi
-    
-    log "✅ Kill switch activated (PID: $KILL_PID)"
-    
-    # Wait for stability
-    sleep 5
-    
+
+    log INFO "Kill switch activated (PID: ${KILL_PID})"
+
+    # Wait for stability using wait $! pattern
+    sleep 5 &
+    wait $!
+
     if ! kill -0 "${KILL_PID}" 2>/dev/null; then
-        log "🚨 Kill switch died within 5 seconds!"
-        kill "${TAIL_PID}" 2>/dev/null
-        exit 1
+        log ERROR "Kill switch died within 5 seconds of starting"
+        _cleanup_and_exit 1
     fi
-    
-    log "🛡️ Container protected - Kill switch monitoring active"
-    
+
+    log INFO "Kill switch monitoring active"
+
     # =========================================================================
-    # Kill Switch Monitoring
+    # Main monitoring loop (with wait $! for immediate signal response)
     # =========================================================================
-    
-    # Simple monitoring loop
+
     while kill -0 "${KILL_PID}" 2>/dev/null; do
-        sleep 60  # Check every minute
-        log "💓 Kill switch running..."
+        sleep 60 &
+        wait $!
+        log INFO "Kill switch heartbeat — PID ${KILL_PID} running"
     done
-    
-    # Kill switch terminated
-    log "🛑 Kill switch terminated - Container shutting down"
-    
-    # Cleanup and exit
-    kill "${TAIL_PID}" 2>/dev/null
-    exit 1
-    
+
+    # Kill switch terminated on its own
+    log WARN "Kill switch process exited — container shutting down"
+    _cleanup_and_exit 1
+
 else
     # =========================================================================
     # Kill Switch Disabled
     # =========================================================================
-    
-    log "⚠️ Kill Switch DISABLED"
-    log "ℹ️ Container will continue even if VPN fails"
-    
-    # Keep container alive with log monitoring only
+
+    log WARN "Kill Switch DISABLED — container will continue even if VPN fails"
+    log INFO "Monitoring AdGuard VPN log only"
+
+    # Keep container alive with log monitoring
     wait "${TAIL_PID}"
 fi
-
-# =============================================================================
-# Container Termination
-# =============================================================================
-
-log "🛑 Container shutting down..."
-
-# Cleanup
-[ -n "$TAIL_PID" ] && kill "${TAIL_PID}" 2>/dev/null
-
-log "✅ Container exited (code: $INIT_EXIT_CODE)"
-exit $INIT_EXIT_CODE

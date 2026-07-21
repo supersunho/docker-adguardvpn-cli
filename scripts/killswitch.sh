@@ -12,11 +12,30 @@
 #
 # Usage: killswitch.sh <real_ip_before_vpn>
 
+set -euo pipefail
+
 # =============================================================================
 # Initialisation
 # =============================================================================
 
 source /opt/adguardvpn_cli/scripts/utils.sh
+setup_traps
+
+# =============================================================================
+# Signal handling
+# =============================================================================
+
+_ks_shutdown() {
+    log INFO "Kill switch received shutdown signal"
+    ks_set_state $KS_TERMINATING
+    exit 0
+}
+
+trap _ks_shutdown TERM INT
+
+# =============================================================================
+# Validate arguments
+# =============================================================================
 
 KS_REAL_IP="${1:-$REAL_IP_BEFORE_VPN}"
 
@@ -46,11 +65,12 @@ TOTAL_CHECKS=0
 SCRIPT_START=$(date +%s)
 
 # =============================================================================
-# Main monitoring loop
+# Main monitoring loop (with wait $! for immediate signal response)
 # =============================================================================
 
 while true; do
-    sleep "$KS_CHECK_INTERVAL"
+    sleep "$KS_CHECK_INTERVAL" &
+    wait $!
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
     UPTIME=$(( $(date +%s) - SCRIPT_START ))
 
