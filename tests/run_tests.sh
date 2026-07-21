@@ -91,8 +91,48 @@ case "${1:-all}" in
         run_shellcheck
         run_unit_tests
         ;;
+    release)
+        run_shellcheck
+        run_unit_tests
+
+        # Optional: actionlint
+        if command -v actionlint &>/dev/null; then
+            echo "[CHECK] Running actionlint..."
+            if actionlint "${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"; then
+                echo "[PASS] actionlint passed"
+                PASS=$((PASS + 1))
+            else
+                echo "[FAIL] actionlint found issues"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+
+        # Optional: Dockerfile check
+        if command -v docker &>/dev/null; then
+            echo "[CHECK] Validating Dockerfile..."
+            if docker build --check "${PROJECT_DIR}" 2>&1; then
+                echo "[PASS] Dockerfile validation passed"
+                PASS=$((PASS + 1))
+            else
+                echo "[FAIL] Dockerfile validation failed"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+
+        # Optional: Compose config check
+        if command -v docker &>/dev/null; then
+            echo "[CHECK] Validating docker-compose.yml..."
+            if docker compose --env-file "${PROJECT_DIR}/.env.example" config --quiet 2>&1; then
+                echo "[PASS] Compose configuration is valid"
+                PASS=$((PASS + 1))
+            else
+                echo "[FAIL] Compose configuration is invalid"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+        ;;
     *)
-        echo "Usage: $0 [unit|shellcheck|all]"
+        echo "Usage: $0 [unit|shellcheck|all|release]"
         exit 1
         ;;
 esac
