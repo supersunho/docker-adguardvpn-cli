@@ -109,8 +109,8 @@ services:
         container_name: adguard-vpn-cli
         env_file: .env
         environment:
-            - PUID=${PUID:-1000}
-            - PGID=${PGID:-1000}
+            - PUID=${PUID:-1001}
+            - PGID=${PGID:-1001}
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
@@ -179,8 +179,8 @@ services:
 | ADGUARD_TUN_ROUTING_MODE               | TUN routing mode                                                                                                                                 | AUTO          | AUTO / TUN_ONLY / PROXY_ONLY|
 | ADGUARD_BOUND_IF_OVERRIDE              | Override bound network interface (empty = auto)                                                                                                  |               | Interface name or empty     |
 | ADGUARD_LOG_LEVEL                      | Container log level                                                                                                                              | INFO          | DEBUG / INFO / WARN / ERROR |
-| PUID                                   | User ID for the container's app user                                                                                                             | 1000          | Positive integer            |
-| PGID                                   | Group ID for the container's app user                                                                                                            | 1000          | Positive integer            |
+| PUID                                   | User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu user at 1000)                                    | 1001          | Positive integer            |
+| PGID                                   | Group ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu group at 1000)                                  | 1001          | Positive integer            |
 
 > [!IMPORTANT]
 >

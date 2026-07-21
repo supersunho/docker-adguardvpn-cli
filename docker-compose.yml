@@ -6,8 +6,8 @@ services:
         container_name: adguard-vpn-cli
         env_file: .env
         environment:
-            - PUID=${PUID:-1000}
-            - PGID=${PGID:-1000}
+            - PUID=${PUID:-1001}
+            - PGID=${PGID:-1001}
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
