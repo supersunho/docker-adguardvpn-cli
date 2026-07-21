@@ -3,8 +3,8 @@
 # AdGuard VPN -- IP Detection
 #
 # Unified public IP detection supporting direct and SOCKS5 modes.
-# Merges the previous duplicate get_public_ip(), get_public_ip_direct(),
-# and associated HTTP-command helpers from utils.sh.
+# Uses fixed method registries with dispatch by allowlisted ID.
+# The persisted cache stores only v1|type|id records, never command strings.
 #
 # Functions:
 #   get_public_ip           -- Detect public IP using DNS + HTTP methods
@@ -16,28 +16,15 @@
 # Configuration
 # =============================================================================
 
-# Ordered list of DNS-based discovery methods.
-# Post-processing (quote stripping for TXT records) is handled uniformly
-# in _ip_detect_dns — no need for inline awk/tr pipelines.
-_IP_DNS_METHODS=(
-    "OpenDNS|dig_get +short myip.opendns.com @resolver1.opendns.com"
-    "Google|dig_get TXT +short o-o.myaddr.l.google.com @ns1.google.com"
-    "Cloudflare1001|dig_get +short txt ch whoami.cloudflare @1.0.0.1"
-    "Cloudflare1111|dig_get +short txt ch whoami.cloudflare @1.1.1.1"
-)
+# Ordered list of DNS-based discovery method IDs.
+_IP_DNS_METHODS=("opendns" "google" "cloudflare1001" "cloudflare1111")
 
-# Ordered list of HTTP-based discovery services
-_IP_HTTP_SERVICES=(
-    "AWS|https://checkip.amazonaws.com"
-    "IPify|https://api.ipify.org"
-    "IPinfo|https://ipinfo.io/ip"
-    "ifconfig.co|https://ifconfig.co"
-    "icanhazip|https://icanhazip.com"
-    "IPecho|https://ipecho.net/plain"
-    "ident.me|https://ident.me"
-    "DNS-O-Matic|https://myip.dnsomatic.com"
-    "ifconfig.me|https://ifconfig.me/ip"
-)
+# Ordered list of HTTP-based discovery service IDs.
+_IP_HTTP_SERVICES=("aws" "ipify" "ipinfo")
+
+# Detection tracking (set by _ip_detect_* functions, consumed by caller)
+_IP_LAST_DNS_ID=""
+_IP_LAST_HTTP_ID=""
 
 # =============================================================================
 # IP address validation
@@ -48,16 +35,62 @@ _is_valid_ipv4() {
 }
 
 # =============================================================================
+# Fixed dispatch: DNS method by allowlisted ID
+# =============================================================================
+
+# Usage: _ip_run_dns_method <id>
+# Returns: IP on stdout, or empty string on failure
+_ip_run_dns_method() {
+    local id="$1"
+
+    case "$id" in
+        opendns)     dig_get +short myip.opendns.com @resolver1.opendns.com 2>/dev/null ;;
+        google)
+            local result
+            result=$(dig_get TXT +short o-o.myaddr.l.google.com @ns1.google.com 2>/dev/null)
+            echo "$result" | tr -d '"' ;;
+        cloudflare1001) dig_get +short txt ch whoami.cloudflare @1.0.0.1 2>/dev/null ;;
+        cloudflare1111) dig_get +short txt ch whoami.cloudflare @1.1.1.1 2>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+
+# =============================================================================
+# Fixed dispatch: HTTP method by allowlisted ID
+# =============================================================================
+
+# Usage: _ip_run_http_method <id> [use_socks5]
+# Returns: IP on stdout, or empty string on failure
+_ip_run_http_method() {
+    local id="$1"
+    local use_socks5="${2:-false}"
+
+    local url=""
+    case "$id" in
+        aws)    url="https://checkip.amazonaws.com" ;;
+        ipify)  url="https://api.ipify.org" ;;
+        ipinfo) url="https://ipinfo.io/ip" ;;
+        *) return 1 ;;
+    esac
+
+    if [ "$use_socks5" = true ]; then
+        socks5_curl_get "$url" 2>/dev/null
+    else
+        curl_get "$url" 2>/dev/null
+    fi
+}
+
+# =============================================================================
 # Internal: DNS-based detection
 # =============================================================================
 
 # Returns: IP on stdout, or empty string on failure
+# Sets: _IP_LAST_DNS_ID to the successful method ID
 _ip_detect_dns() {
-    local method_name method_command ip
+    local id ip
 
-    # Only works in TUN mode (DNS queries bypass SOCKS proxy)
     if is_socks_mode; then
-        return 0  # empty = no result
+        return 0  # DNS not available in SOCKS mode
     fi
 
     if ! command -v dig >/dev/null 2>&1; then
@@ -68,24 +101,18 @@ _ip_detect_dns() {
     local -a methods=("${_IP_DNS_METHODS[@]}")
     shuffle_array methods
 
-    for entry in "${methods[@]}"; do
-        IFS='|' read -r method_name method_command <<< "$entry"
-        log DEBUG "DNS: testing ${method_name}"
+    for id in "${methods[@]}"; do
+        log DEBUG "DNS: testing ${id}"
 
-        # Split command string into array for safe execution without eval.
-        # The command is a function call (dig_get) with its arguments, e.g.
-        #   "dig_get +short myip.opendns.com @resolver1.opendns.com"
-        local -a cmd_parts=()
-        read -ra cmd_parts <<< "$method_command"
-        ip=$("${cmd_parts[@]}" 2>/dev/null)
-
-        # Strip quotes for TXT-record results (e.g. Cloudflare, Google)
+        ip=$(_ip_run_dns_method "$id")
         if ! _is_valid_ipv4 "$ip"; then
+            # Strip quotes for TXT-record results (Cloudflare, Google)
             ip=$(echo "$ip" | tr -d '"')
         fi
 
         if _is_valid_ipv4 "$ip"; then
-            log DEBUG "DNS: ${method_name} -> ${ip}"
+            _IP_LAST_DNS_ID="$id"
+            log DEBUG "DNS: ${id} -> ${ip}"
             echo "$ip"
             return 0
         fi
@@ -99,26 +126,22 @@ _ip_detect_dns() {
 # =============================================================================
 
 # Returns: IP on stdout, or empty string on failure
-# If use_socks5 is true, routes through SOCKS5 proxy
+# Sets: _IP_LAST_HTTP_ID to the successful method ID
 _ip_detect_http() {
     local use_socks5="${1:-false}"
-    local name url ip
+    local id ip
 
     local -a services=("${_IP_HTTP_SERVICES[@]}")
     shuffle_array services
 
-    for entry in "${services[@]}"; do
-        IFS='|' read -r name url <<< "$entry"
-        log DEBUG "HTTP: testing ${name} $([ "$use_socks5" = true ] && echo '[via SOCKS5]' || echo '[direct]')"
+    for id in "${services[@]}"; do
+        log DEBUG "HTTP: testing ${id} $([ "$use_socks5" = true ] && echo '[via SOCKS5]' || echo '[direct]')"
 
-        if [ "$use_socks5" = true ]; then
-            ip=$(socks5_curl_get "$url")
-        else
-            ip=$(curl_get "$url")
-        fi
+        ip=$(_ip_run_http_method "$id" "$use_socks5")
 
         if _is_valid_ipv4 "$ip"; then
-            log DEBUG "HTTP: ${name} -> ${ip}"
+            _IP_LAST_HTTP_ID="$id"
+            log DEBUG "HTTP: ${id} -> ${ip}"
             echo "$ip"
             return 0
         fi
@@ -130,28 +153,58 @@ _ip_detect_http() {
 # =============================================================================
 # Save / load persistent method for faster subsequent lookups
 # =============================================================================
+#
+# Format: v1|type|id  (e.g. v1|dns|opendns, v1|http|aws)
+# Never stores command strings or executable data.
+# Writes are atomic: mktemp → write → chmod 600 → mv.
 
 _IP_METHOD_FILE="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
 
+# Usage: _ip_save_method <type> <id>
+#   type: "dns" or "http"
+#   id:   allowlisted method ID (e.g. opendns, aws)
 _ip_save_method() {
-    local type="$1" name="$2" data="$3"
-    mkdir -p "$(dirname "$_IP_METHOD_FILE")" 2>/dev/null || true
-    echo "${type}|${name}|${data}" >> "$_IP_METHOD_FILE"
+    local type="$1" id="$2"
+    local dir
+    dir="$(dirname "$_IP_METHOD_FILE")"
+
+    mkdir -p "$dir" 2>/dev/null || true
+
+    # Atomic write: mktemp in the same directory, write, chmod 600, then mv
+    local tmpfile
+    tmpfile="$(mktemp "${dir}/ip_method.XXXXXX" 2>/dev/null)" || return 1
+
+    umask 077
+    printf 'v1|%s|%s\n' "$type" "$id" > "$tmpfile"
+    chmod 600 "$tmpfile"
+    mv -f "$tmpfile" "$_IP_METHOD_FILE"
 }
 
+# Load saved method IDs.
+# Ignores lines that don't match v1|type|id format or unknown IDs.
+# Usage: read -r saved_dns saved_http <<< "$(_ip_load_methods)"
 _ip_load_methods() {
     local saved_dns="" saved_http=""
+
     if [ ! -f "$_IP_METHOD_FILE" ]; then
         echo "" ""
         return
     fi
-    while IFS='|' read -r type name data; do
+
+    while IFS='|' read -r version type id; do
+        [ "$version" != "v1" ] && continue
+
         if [ "$type" = "dns" ]; then
-            saved_dns="${name}|${data}"
+            for m in "${_IP_DNS_METHODS[@]}"; do
+                [ "$id" = "$m" ] && { saved_dns="$id"; break; }
+            done
         elif [ "$type" = "http" ]; then
-            saved_http="${name}|${data}"
+            for m in "${_IP_HTTP_SERVICES[@]}"; do
+                [ "$id" = "$m" ] && { saved_http="$id"; break; }
+            done
         fi
     done < "$_IP_METHOD_FILE"
+
     echo "$saved_dns" "$saved_http"
 }
 
@@ -175,23 +228,20 @@ get_public_ip() {
         log DEBUG "IP Detection Mode: TUN (Direct)"
     fi
 
+    # Reset tracking
+    _IP_LAST_DNS_ID=""
+    _IP_LAST_HTTP_ID=""
+
     # Try saved methods first (fast path)
     local saved_dns saved_http
     read -r saved_dns saved_http <<< "$(_ip_load_methods)"
 
     # --- DNS detection --------------------------------------------------------
     if [ -n "$saved_dns" ] && [ "$use_socks5" = false ]; then
-        IFS='|' read -r _ saved_cmd <<< "$saved_dns"
-        # Execute saved command via array (no eval)
-        local -a cmd_parts=()
-        read -ra cmd_parts <<< "$saved_cmd"
-        dns_ip=$("${cmd_parts[@]}" 2>/dev/null)
-        # Strip quotes for TXT-record results
-        if ! _is_valid_ipv4 "$dns_ip"; then
-            dns_ip=$(echo "$dns_ip" | tr -d '"')
-        fi
+        dns_ip=$(_ip_run_dns_method "$saved_dns" 2>/dev/null)
         if _is_valid_ipv4 "$dns_ip"; then
-            log DEBUG "DNS: reused saved method -> ${dns_ip}"
+            _IP_LAST_DNS_ID="$saved_dns"
+            log DEBUG "DNS: reused saved method ${saved_dns} -> ${dns_ip}"
         else
             dns_ip=""
         fi
@@ -203,13 +253,10 @@ get_public_ip() {
 
     # --- HTTP detection -------------------------------------------------------
     if [ -n "$saved_http" ]; then
-        if [ "$use_socks5" = true ]; then
-            http_ip=$(socks5_curl_get "$(echo "$saved_http" | cut -d'|' -f3)" 2>/dev/null)
-        else
-            http_ip=$(curl_get "$(echo "$saved_http" | cut -d'|' -f3)" 2>/dev/null)
-        fi
+        http_ip=$(_ip_run_http_method "$saved_http" "$use_socks5" 2>/dev/null)
         if _is_valid_ipv4 "$http_ip"; then
-            log DEBUG "HTTP: reused saved method -> ${http_ip}"
+            _IP_LAST_HTTP_ID="$saved_http"
+            log DEBUG "HTTP: reused saved method ${saved_http} -> ${http_ip}"
         else
             http_ip=""
         fi
@@ -224,26 +271,28 @@ get_public_ip() {
 
     if [ -n "$dns_ip" ] && [ -n "$http_ip" ]; then
         if [ "$dns_ip" = "$http_ip" ]; then
-            # Consistent -- save both methods
-            _ip_save_method "dns"  "${_IP_DNS_METHODS[0]%%|*}" "${_IP_DNS_METHODS[0]#*|}"
-            _ip_save_method "http" "${_IP_HTTP_SERVICES[0]%%|*}" "${_IP_HTTP_SERVICES[0]#*|}"
+            # Consistent -- save both methods that succeeded
+            [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
+            [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
             echo "$dns_ip"
             return 0
         else
             # Mismatch -- prefer HTTP in SOCKS mode, DNS in TUN mode
             if [ "$use_socks5" = true ]; then
+                [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
                 echo "$http_ip"
             else
+                [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
                 echo "$dns_ip"
             fi
             return 0
         fi
     elif [ -n "$dns_ip" ]; then
-        _ip_save_method "dns" "${_IP_DNS_METHODS[0]%%|*}" "${_IP_DNS_METHODS[0]#*|}"
+        [ -n "$_IP_LAST_DNS_ID" ] && _ip_save_method "dns" "$_IP_LAST_DNS_ID"
         echo "$dns_ip"
         return 0
     elif [ -n "$http_ip" ]; then
-        _ip_save_method "http" "${_IP_HTTP_SERVICES[0]%%|*}" "${_IP_HTTP_SERVICES[0]#*|}"
+        [ -n "$_IP_LAST_HTTP_ID" ] && _ip_save_method "http" "$_IP_LAST_HTTP_ID"
         echo "$http_ip"
         return 0
     fi
