@@ -25,51 +25,41 @@ readonly KS_LEAK_WARNING_ONLY="${ADGUARD_LEAK_WARNING_ONLY:-false}"
 readonly KS_IP_RETRY_COUNT="${ADGUARD_MAX_IP_DETECTION_RETRIES:-3}"
 readonly KS_IP_RETRY_DELAY="${ADGUARD_IP_DETECTION_RETRY_DELAY:-10}"
 
-# Locked IP detection URL — once set, all subsequent checks reuse the same
-# HTTP service endpoint for consistent results (no shuffle, no DNS/HTTP mismatch).
-KS_LOCKED_IP_URL=""
+# Locked IP detection method ID — once set, all subsequent checks reuse the same
+# HTTP method for consistent results (no shuffle, no DNS/HTTP mismatch).
+KS_LOCKED_HTTP_ID=""
 
-# Pick the right HTTP function for the current connection mode.
-# SOCKS mode: through SOCKS5 proxy (socks5_curl_get)
-# TUN mode:   direct HTTP (curl_get)
-_ks_http_get() {
-    if is_socks_mode; then
-        socks5_curl_get "$@"
-    else
-        curl_get "$@"
-    fi
-}
+# =============================================================================
+# Consistent IP detection for kill switch monitoring
+# =============================================================================
 
-# Consistent IP detection for kill switch monitoring.
-# First call discovers a working HTTP service (tried in fixed order, no shuffle)
+# First call discovers a working HTTP method (tried in fixed order, no shuffle)
 # and locks to it for all subsequent calls.
-# Uses the appropriate HTTP function for the current mode (SOCKS vs TUN).
+# DNS is intentionally skipped: in TUN mode DNS may bypass the VPN tunnel
+# and return a different IP than tunneled HTTP traffic.
 # Usage: ip=$(ks_detect_ip_consistent)
 # Returns: IP on stdout, or "ERROR" on failure
 ks_detect_ip_consistent() {
-    if [ -n "$KS_LOCKED_IP_URL" ]; then
-        # Locked — use the same endpoint every time
+    if [ -n "$KS_LOCKED_HTTP_ID" ]; then
+        # Locked — use the same method every time
         local ip
-        ip=$(_ks_http_get "$KS_LOCKED_IP_URL" 2>/dev/null)
+        ip=$(_ip_run_http_method "$KS_LOCKED_HTTP_ID" 2>/dev/null)
         if _is_valid_ipv4 "$ip"; then
             echo "$ip"
             return 0
         fi
-        # Locked endpoint failed — treat as ERROR (kill switch will retry via caller)
+        # Locked method failed — treat as ERROR (kill switch will retry via caller)
         echo "ERROR"
         return 1
     fi
 
-    # First call — discover a working HTTP service in fixed order (no shuffle).
-    # DNS is intentionally skipped: in TUN mode DNS may bypass the VPN tunnel
-    # and return a different IP than tunneled HTTP traffic.
-    for entry in "${_IP_HTTP_SERVICES[@]}"; do
-        IFS='|' read -r name url <<< "$entry"
+    # First call — discover a working HTTP method in fixed order (no shuffle).
+    for id in "${_IP_HTTP_SERVICES[@]}"; do
         local ip
-        ip=$(_ks_http_get "$url" 2>/dev/null)
+        ip=$(_ip_run_http_method "$id" 2>/dev/null)
         if _is_valid_ipv4 "$ip"; then
-            KS_LOCKED_IP_URL="$url"
-            log INFO "IP detection locked to ${name} (${url}) — IP: ${ip}"
+            KS_LOCKED_HTTP_ID="$id"
+            log INFO "IP detection locked to HTTP method ${id} — IP: ${ip}"
             echo "$ip"
             return 0
         fi
@@ -79,7 +69,10 @@ ks_detect_ip_consistent() {
     return 1
 }
 
-# Record the real IP before VPN connection.
+# =============================================================================
+# Record the real IP before VPN connection
+# =============================================================================
+
 # Usage: ks_detect_initial_ip
 # Returns: 0 on success, 1 on failure
 # Sets: KS_REAL_IP (global) on success
@@ -104,7 +97,10 @@ ks_detect_initial_ip() {
     return 0
 }
 
-# Wait for the VPN tunnel to become active.
+# =============================================================================
+# Wait for VPN tunnel activation
+# =============================================================================
+
 # Polls every 2 seconds up to KS_MAX_WAIT_TIME seconds.
 # Every 5 seconds during the wait, logs a progress message so the user
 # can see the kill switch is actively waiting for the tunnel.
@@ -117,8 +113,6 @@ ks_wait_for_vpn_tunnel() {
 
     while [ "$elapsed" -lt "$KS_MAX_WAIT_TIME" ]; do
         if check_adguard_vpn_status; then
-            # Tunnel says connected -- verify IP has changed
-            # Uses ks_detect_ip_consistent to lock the detection method on first success
             local temp_ip
             temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
             if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ] && \
@@ -128,7 +122,6 @@ ks_wait_for_vpn_tunnel() {
                 return 0
             fi
 
-            # Show progress every 5s so the user knows we're waiting
             if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
                 if [ "${ADGUARD_SHOW_LOG:-true}" = "true" ]; then
                     log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
@@ -146,7 +139,10 @@ ks_wait_for_vpn_tunnel() {
     return 1
 }
 
-# Detect the current public IP with retry logic.
+# =============================================================================
+# Detect current IP with retry logic
+# =============================================================================
+
 # Usage: ks_detect_current_ip
 # Returns: 0 on success, 1 on failure (all retries exhausted)
 # Sets: KS_CURRENT_IP (global) with the detected IP
@@ -177,13 +173,11 @@ ks_detect_current_ip() {
 }
 
 # Check if the VPN service is currently connected.
-# Usage: if ks_is_vpn_connected; then echo "VPN is up"; fi
 ks_is_vpn_connected() {
     check_adguard_vpn_status
 }
 
 # Check if the current IP represents a leak (matches the original real IP).
-# Usage: if ks_is_leak; then echo "LEAK DETECTED"; fi
 ks_is_leak() {
     [ "$KS_CURRENT_IP" = "$KS_REAL_IP" ]
 }
@@ -195,7 +189,7 @@ ks_detect_ip_change() {
        [ "$KS_CURRENT_IP" != "$KS_REAL_IP" ]; then
         log INFO "VPN IP changed: ${KS_VPN_IP:-none} -> ${KS_CURRENT_IP}"
         KS_VPN_IP="$KS_CURRENT_IP"
-        return 0  # IP changed
+        return 0
     fi
-    return 0  # no change (return 0 — callers don't check, and set -e would trap return 1)
+    return 0
 }
