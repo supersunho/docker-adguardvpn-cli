@@ -627,6 +627,20 @@ jobs:
                   pattern: digests-*
                   merge-multiple: false
 
+            - name: 📦 Prepare release digest assets
+              run: |
+                  set -euo pipefail
+                  shopt -s nullglob
+                  digest_files=(/tmp/digests/digests-*/digest.txt)
+                  if [ "${#digest_files[@]}" -eq 0 ]; then
+                    echo "❌ No digest files found"
+                    exit 1
+                  fi
+                  for digest_file in "${digest_files[@]}"; do
+                    arch=$(basename "$(dirname "$digest_file")" | sed 's/^digests-//')
+                    cp "$digest_file" "/tmp/digests/digest-${arch}.txt"
+                  done
+
             - name: 🕐 Set current date
               run: echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_ENV"
 
@@ -725,7 +739,7 @@ jobs:
                   tag_name: ${{ needs.prepare.outputs.release_tag }}
                   name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.release_tag }}"
                   body: ${{ steps.release-notes.outputs.body }}
-                  files: /tmp/digests/*/digest.txt
+                  files: /tmp/digests/digest-*.txt
                   draft: false
                   prerelease: ${{ needs.prepare.outputs.prerelease }}
               env:
