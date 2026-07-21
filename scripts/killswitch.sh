@@ -140,7 +140,8 @@ while true; do
     # --------------------------------------------------------------------------
     # 5. Heartbeat / periodic logging
     # --------------------------------------------------------------------------
-    if [ $((TOTAL_CHECKS % 4)) -eq 0 ]; then
+    # Show heartbeat on first check (for immediate feedback), then every 4th
+    if [ "$TOTAL_CHECKS" -eq 1 ] || [ $((TOTAL_CHECKS % 4)) -eq 0 ]; then
         ks_heartbeat "$TOTAL_CHECKS" "$UPTIME"
     fi
 
