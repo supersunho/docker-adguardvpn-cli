@@ -213,10 +213,6 @@ fi
 log INFO "Configuring AdGuard VPN..."
 adguardvpn-cli config set-mode "${ADGUARD_CONNECTION_TYPE,,}"
 
-if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
-    adguardvpn-cli config clear-socks-auth
-fi
-
 adguardvpn-cli config set-update-channel "$ADGUARD_UPDATE_CHANNEL"
 adguardvpn-cli config set-show-hints "$ADGUARD_SHOW_HINTS"
 adguardvpn-cli config set-debug-logging "$ADGUARD_DEBUG_LOGGING"
