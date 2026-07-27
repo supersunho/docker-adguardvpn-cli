@@ -85,7 +85,14 @@ _record_auth_failure() {
         return $?
     fi
 
-    printf '%s\n' "$failure_count" > "$AUTH_FAILURE_FILE"
+    # Atomically write the counter using temp-file-and-rename to prevent
+    # partial or interleaved reads from concurrent processes.
+    if ! printf '%s\n' "$failure_count" > "${AUTH_FAILURE_FILE}.tmp" 2>/dev/null; then
+        log_force ERROR "Could not write auth failure count (disk full?)"
+        return 1
+    fi
+    mv -f "${AUTH_FAILURE_FILE}.tmp" "$AUTH_FAILURE_FILE" 2>/dev/null || true
+
     log_force WARN "Authentication failure ${failure_count}/${ADGUARD_AUTH_RESET_AFTER_FAILURES}"
     return 0
 }
