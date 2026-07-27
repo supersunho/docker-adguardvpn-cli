@@ -98,7 +98,7 @@ case "${1:-all}" in
         # Optional: actionlint
         if command -v actionlint &>/dev/null; then
             echo "[CHECK] Running actionlint..."
-            if actionlint "${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"; then
+            if actionlint "${PROJECT_DIR}/.github/workflows/"*.yml; then
                 echo "[PASS] actionlint passed"
                 PASS=$((PASS + 1))
             else
@@ -122,13 +122,19 @@ case "${1:-all}" in
         # Optional: Compose config check
         if command -v docker &>/dev/null; then
             echo "[CHECK] Validating docker-compose.yml..."
-            if docker compose --env-file "${PROJECT_DIR}/.env.example" config --quiet 2>&1; then
+            compose_check_dir=$(mktemp -d)
+            cp "${PROJECT_DIR}/docker-compose.yml" "${compose_check_dir}/docker-compose.yml"
+            cp "${PROJECT_DIR}/.env.example" "${compose_check_dir}/.env"
+            if docker compose --project-directory "$compose_check_dir" \
+                --env-file "${compose_check_dir}/.env" \
+                -f "${compose_check_dir}/docker-compose.yml" config --quiet 2>&1; then
                 echo "[PASS] Compose configuration is valid"
                 PASS=$((PASS + 1))
             else
                 echo "[FAIL] Compose configuration is invalid"
                 FAIL=$((FAIL + 1))
             fi
+            rm -rf "$compose_check_dir"
         fi
         ;;
     *)

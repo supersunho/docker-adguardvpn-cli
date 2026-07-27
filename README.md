@@ -154,7 +154,6 @@ If authentication fails three consecutive times, the persisted AdGuard data is r
 AdguardVPN-CLI + qBittorrent
 
 ```yml
-version: "3"
 services:
     adguard-vpn-cli:
         image: supersunho/adguardvpn-cli:latest
@@ -174,8 +173,8 @@ services:
         devices:
             - /dev/net/tun
         ports:
-            - 1080:1080
-            - 6089:6089
+            - 127.0.0.1:1080:1080
+            - 127.0.0.1:6089:6089
             - 6881:6881
             - 6881:6881/udp
     qbittorrent:
@@ -210,12 +209,12 @@ volumes:
 | ADGUARD_CONNECTION_TYPE                | VPN operating mode                                                                                                                    | TUN           | TUN / SOCKS                  |
 | ADGUARD_AUTH_RESET_AFTER_FAILURES      | Consecutive authentication failures before resetting the data directory                                                               | 3             | Positive integer             |
 | ADGUARD_AUTH_TIMEOUT                 | Device-code OAuth timeout in seconds                                                                                                  | 900           | Positive integer             |
-| ADGUARD_SOCKS5_USERNAME                | SOCKS5 proxy username                                                                                                                 | username      |                              |
-| ADGUARD_SOCKS5_PASSWORD                | SOCKS5 proxy password                                                                                                                 | password      |                              |
+| ADGUARD_SOCKS5_USERNAME                | SOCKS5 proxy username                                                                                                                 |               |                              |
+| ADGUARD_SOCKS5_PASSWORD                | SOCKS5 proxy password                                                                                                                 |               |                              |
 | ADGUARD_SOCKS5_HOST                    | SOCKS5 proxy host address                                                                                                             | 127.0.0.1     | IPv4 address                 |
 | ADGUARD_SOCKS5_PORT                    | SOCKS5 proxy port                                                                                                                     | 1080          | Port 1-65535                 |
 | ADGUARD_USE_KILL_SWITCH                | Enable kill switch to prevent IP leaks when VPN drops                                                                                 | true          | true / false                 |
-| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Kill switch check interval in seconds                                                                                                 | 15            | Positive integer             |
+| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Kill switch check interval in seconds                                                                                                 | 8             | Positive integer             |
 | ADGUARD_MAX_LEAK_TOLERANCE             | Number of leak detections before termination (0 = immediate)                                                                          | 0             | Positive integer             |
 | ADGUARD_LEAK_WARNING_ONLY              | Only warn on leaks, do not terminate                                                                                                  | false         | true / false                 |
 | ADGUARD_MAX_IP_DETECTION_RETRIES       | Maximum IP detection retry attempts                                                                                                   | 3             | Positive integer             |
@@ -242,7 +241,7 @@ volumes:
 
 > [!IMPORTANT]
 >
-> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, protect the proxy with a username and password. Use `0.0.0.0` to listen on all container interfaces; this is a bind address, not an address to use as the proxy destination. Publish port `1080` (or your configured port) with Docker before connecting from the host.
+> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, protect the proxy with a username and password. Use `0.0.0.0` to listen on all container interfaces; this is a bind address, not an address to use as the proxy destination. The default Compose file binds the host port to `127.0.0.1`; change the host-side bind address only when remote access is required, and configure authentication plus firewall rules first.
 > - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
 > - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
 > - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
@@ -453,12 +452,12 @@ The Dockerfile grants `appuser` passwordless sudo (`NOPASSWD:ALL`). This is requ
 The Dockerfile fetches and executes an upstream install script directly from GitHub. This is inherent to the current AdGuard VPN CLI distribution model. Mitigations include:
 
 - SHA256 computation and logging of both `install.sh` and the installed binary for audit trail.
-- Best-effort verification against the release's `SHA256SUMS` file when available (the build fails on checksum mismatch).
+- Fail-closed verification against the GitHub Release API's `install.sh` asset digest. The build fails when the digest is unavailable or mismatched.
 - Validation of the GitHub API release tag against a semver pattern (`^vX.Y.Z`) to catch anomalous responses.
 
 ### Exposed ports in production
 
-The default `docker-compose.yml` exposes `1080:1080` (SOCKS5). If you do not need SOCKS5 access from the host, remove the `ports` section or bind to localhost (`127.0.0.1:1080:1080`).
+The default `docker-compose.yml` binds `1080` and `6089` to localhost only. If remote access is required, change the host-side binding explicitly and configure SOCKS5 authentication and firewall restrictions before deployment.
 
 Do **not** expose port `6089` to the public internet — it is an internal API and DNS proxy port used by AdGuard VPN CLI for DNS filtering configuration and health checking.
 

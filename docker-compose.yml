@@ -1,4 +1,3 @@
-version: "3"
 services:
     adguard-vpn-cli:
         image: supersunho/adguardvpn-cli:latest
@@ -21,8 +20,8 @@ services:
         devices:
             - /dev/net/tun
         ports:
-            - "1080:1080"          # SOCKS5 proxy (when CONNECTION_TYPE=SOCKS)
-            - "6089:6089"          # AdGuard internal API / DNS proxy
+            - "127.0.0.1:1080:1080"          # SOCKS5 proxy (when CONNECTION_TYPE=SOCKS)
+            - "127.0.0.1:6089:6089"          # AdGuard internal API / DNS proxy
         deploy:
             resources:
                 limits:

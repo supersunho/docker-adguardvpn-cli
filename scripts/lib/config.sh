@@ -40,6 +40,10 @@ _config_define_schema() {
         "positive_int" "3" \
         "Consecutive authentication failures before resetting the data directory"
 
+    _config_add "ADGUARD_AUTH_TIMEOUT" \
+        "positive_int" "900" \
+        "Device-code OAuth timeout in seconds"
+
     # ---------- SOCKS proxy ----------
     # NOTE: Defaults are intentionally empty to force explicit user configuration.
     #       The review finding (CRITICAL) flagged hardcoded "username"/"password"
@@ -66,7 +70,7 @@ _config_define_schema() {
         "Enable kill switch to prevent IP leaks when VPN drops"
 
     _config_add "ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL" \
-        "positive_int" "15" \
+        "positive_int" "8" \
         "Kill switch check interval in seconds"
 
     _config_add "ADGUARD_MAX_LEAK_TOLERANCE" \
@@ -337,8 +341,9 @@ config_get() {
 
 # Print a .env file (key=value with comments) based on the schema.
 config_generate_dotenv() {
-    local key desc line
+    local key desc line last_key
     local prev_category=""
+    last_key="${_CONFIG_KEYS[${#_CONFIG_KEYS[@]} - 1]}"
 
     for key in "${_CONFIG_KEYS[@]}"; do
         desc="${_CONFIG_DESC[$key]}"
@@ -348,6 +353,8 @@ config_generate_dotenv() {
         #  pattern; this is a simple heuristic.)
         echo "# ${desc}"
         echo "${key}=${_CONFIG_DEFAULT[$key]}"
-        echo ""
+        if [ "$key" != "$last_key" ]; then
+            echo ""
+        fi
     done
 }

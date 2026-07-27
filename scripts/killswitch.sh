@@ -70,7 +70,7 @@ while true; do
         sleep "$KS_CHECK_INTERVAL" &
     else
         # During LEAK_WARNING or STANDBY, halve the interval for quicker reaction
-        local _fast_interval=$((KS_CHECK_INTERVAL / 2))
+        _fast_interval=$((KS_CHECK_INTERVAL / 2))
         [ "$_fast_interval" -lt 2 ] && _fast_interval=2
         sleep "$_fast_interval" &
     fi

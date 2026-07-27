@@ -40,52 +40,56 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # of relying on that stale default.
 #
 # Integrity flow:
-#   1. Download install.sh from the release tag
-#   2. Compute and log SHA256 for audit trail
-#   3. Try to fetch SHA256SUMS from the release; if found, verify install.sh
-#   4. If no SHA256SUMS, log a warning but continue (best-effort)
+#   1. Resolve the release metadata from the GitHub API
+#   2. Download install.sh from the release asset, not a mutable branch path
+#   3. Compare its SHA256 with the API-published asset digest
+#   4. Fail closed when the digest is missing or mismatched
 #   5. After installation, compute and log SHA256 of the installed binary
-RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
-        echo "🔍 Fetching latest AdGuard VPN CLI release..." && \
-        ACTUAL_VERSION=$(curl -fsSL https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r '.tag_name // empty') && \
-        echo "📦 Latest version: ${ACTUAL_VERSION}" && \
-        echo "🔐 Validating release tag format..." && \
-        if ! echo "${ACTUAL_VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then \
-            echo "❌ Invalid release tag from GitHub API: ${ACTUAL_VERSION}" >&2; \
-            echo "❌ Possible MITM or API compromise — expected vX.Y.Z format" >&2; \
-            exit 1; \
-        fi && \
-        echo "✅ Release tag format verified: ${ACTUAL_VERSION}"; \
+RUN set -eu; \
+    if [ "${AGCLI_VERSION}" = "latest" ]; then \
+        echo "🔍 Fetching latest AdGuard VPN CLI release..."; \
+        curl -fsSL -o /tmp/release.json \
+            https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest; \
+        ACTUAL_VERSION=$(jq -er '.tag_name // empty' /tmp/release.json); \
+        echo "📦 Latest version: ${ACTUAL_VERSION}"; \
     else \
         ACTUAL_VERSION="${AGCLI_VERSION}"; \
         echo "📦 Using specified version: ${ACTUAL_VERSION}"; \
-    fi && \
-    [ -n "$ACTUAL_VERSION" ] || { echo "ERROR: Could not determine version"; exit 1; } && \
-    SOURCE_VERSION="${ACTUAL_VERSION#v}" && \
-    PACKAGE_VERSION="${SOURCE_VERSION%-release}" && \
-    [ -n "$PACKAGE_VERSION" ] || { echo "ERROR: Could not determine package version"; exit 1; } && \
-    echo "⬇️  Downloading AdGuard VPN CLI ${ACTUAL_VERSION}..." && \
+    fi; \
+    [ -n "$ACTUAL_VERSION" ] || { echo "ERROR: Could not determine version"; exit 1; }; \
+    echo "🔐 Validating release tag format..." && \
+    echo "${ACTUAL_VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$' || { \
+        echo "❌ Invalid release tag: ${ACTUAL_VERSION}" >&2; \
+        echo "❌ Expected vX.Y.Z or vX.Y.Z-suffix" >&2; \
+        exit 1; \
+    }; \
+    echo "✅ Release tag format verified: ${ACTUAL_VERSION}"; \
+    if [ "${AGCLI_VERSION}" != "latest" ]; then \
+        curl -fsSL -o /tmp/release.json \
+            "https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/tags/${ACTUAL_VERSION}"; \
+    fi; \
+    EXPECTED_INSTALL_SHA256=$(jq -er \
+        '.assets[] | select(.name == "install.sh") | .digest // empty | sub("^sha256:"; "")' \
+        /tmp/release.json); \
+    echo "${EXPECTED_INSTALL_SHA256}" | grep -qE '^[0-9a-fA-F]{64}$' || { \
+        echo "❌ Release API did not provide a valid install.sh SHA256 digest" >&2; \
+        exit 1; \
+    }; \
+    SOURCE_VERSION="${ACTUAL_VERSION#v}"; \
+    PACKAGE_VERSION="${SOURCE_VERSION%-release}"; \
+    [ -n "$PACKAGE_VERSION" ] || { echo "ERROR: Could not determine package version"; exit 1; }; \
+    echo "⬇️  Downloading AdGuard VPN CLI ${ACTUAL_VERSION}..."; \
     curl -fsSL -o /tmp/install.sh \
-        "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/${ACTUAL_VERSION}/scripts/release/install.sh" && \
+        "https://github.com/AdguardTeam/AdGuardVPNCLI/releases/download/${ACTUAL_VERSION}/install.sh" && \
     echo "🔐 Computing SHA256 of install.sh..." && \
     INSTALL_SHA256=$(sha256sum /tmp/install.sh | cut -d' ' -f1) && \
     echo "SHA256(install.sh)=${INSTALL_SHA256}" && \
-    echo "🔍 Checking release checksums..." && \
-    CHECKSUMS_URL="https://github.com/AdguardTeam/AdGuardVPNCLI/releases/download/${ACTUAL_VERSION}/SHA256SUMS" && \
-    if curl -fsSL -o /tmp/SHA256SUMS "${CHECKSUMS_URL}"; then \
-        echo "✅ Release checksums found, verifying install.sh..." && \
-        if echo "${INSTALL_SHA256}  /tmp/install.sh" | sha256sum -c -; then \
-            echo "✅ install.sh checksum verified against release" && \
-            rm /tmp/SHA256SUMS; \
-        else \
-            echo "❌ install.sh checksum MISMATCH — possible tampering!" >&2; \
-            rm -f /tmp/SHA256SUMS /tmp/install.sh; \
-            exit 1; \
-        fi; \
-    else \
-        echo "⚠️  No SHA256SUMS found at ${CHECKSUMS_URL}" && \
-        echo "⚠️  Continuing with audit trail (SHA256 logged above)"; \
+    if [ "${INSTALL_SHA256}" != "${EXPECTED_INSTALL_SHA256}" ]; then \
+        echo "❌ install.sh checksum MISMATCH — possible tampering!" >&2; \
+        rm -f /tmp/install.sh; \
+        exit 1; \
     fi && \
+    echo "✅ install.sh checksum verified against release asset digest" && \
     USER=root sh /tmp/install.sh -v -a y -V "$PACKAGE_VERSION" && \
     echo "🔐 Computing SHA256 of installed binary..." && \
     BINARY_PATH=$(command -v adguardvpn-cli) && \

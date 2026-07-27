@@ -43,6 +43,20 @@ test_config_bootstrap_completes() {
         "0" "${ADGUARD_MAX_LEAK_TOLERANCE}"
     assertEquals "ADGUARD_LEAK_WARNING_ONLY default" \
         "false" "${ADGUARD_LEAK_WARNING_ONLY}"
+    assertEquals "ADGUARD_AUTH_TIMEOUT default" \
+        "900" "${ADGUARD_AUTH_TIMEOUT}"
+    assertEquals "kill switch check interval default" \
+        "8" "${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL}"
+}
+
+test_auth_timeout_requires_positive_integer() {
+    export ADGUARD_AUTH_TIMEOUT=0
+    if config_validate; then
+        assertTrue "ADGUARD_AUTH_TIMEOUT=0 must fail validation" false
+    else
+        assertTrue "ADGUARD_AUTH_TIMEOUT=0 must fail validation" true
+    fi
+    unset ADGUARD_AUTH_TIMEOUT
 }
 
 test_lowercase_expansion_does_not_crash() {
