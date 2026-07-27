@@ -32,12 +32,20 @@ _authentication_is_available() {
     local status_output status_exit=0
     status_output="$(adguardvpn-cli status 2>&1)" || status_exit=$?
 
+    # If the CLI exited with an error, authentication is definitely unavailable.
+    # Previously this function returned "authenticated" when exit code was non-zero
+    # but output was non-empty (the OR condition), which broke when CLI error
+    # messages changed and the grep missed them. Exit codes are more stable.
+    [ "$status_exit" -eq 0 ] || return 1
+
+    # Belt-and-suspenders: also check for known "not authenticated" patterns
+    # in case a future CLI version exits 0 while unauthenticated.
     if printf '%s\n' "$status_output" | grep -qiE \
         'not logged in|authentication required|login required|unauthorized|session expired|invalid session'; then
         return 1
     fi
 
-    [ "$status_exit" -eq 0 ] || [ -n "$status_output" ]
+    return 0
 }
 
 _clear_auth_failures() {
