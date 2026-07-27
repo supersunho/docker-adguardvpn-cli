@@ -221,25 +221,34 @@ fi
 # =============================================================================
 
 log INFO "Configuring AdGuard VPN..."
-adguardvpn-cli config set-mode "${ADGUARD_CONNECTION_TYPE,,}"
 
-adguardvpn-cli config set-update-channel "$ADGUARD_UPDATE_CHANNEL"
-adguardvpn-cli config set-show-hints "$ADGUARD_SHOW_HINTS"
-adguardvpn-cli config set-debug-logging "$ADGUARD_DEBUG_LOGGING"
-adguardvpn-cli config set-show-notifications "$ADGUARD_SHOW_NOTIFICATIONS"
-adguardvpn-cli config set-protocol "$ADGUARD_PROTOCOL"
-adguardvpn-cli config set-post-quantum "$ADGUARD_POST_QUANTUM"
-adguardvpn-cli config set-telemetry "$([ "${ADGUARD_TELEMETRY,,}" = true ] && echo "on" || echo "off")"
-adguardvpn-cli config set-tun-routing-mode "$ADGUARD_TUN_ROUTING_MODE"
+# Each config command has individual error handling so a single deprecated
+# or rejected option does not abort the entire initialization under set -e.
+# Exit codes are caught with || true and a WARN is logged instead.
+_config_set() {
+    local option="$1" value="$2"
+    adguardvpn-cli config set-"${option}" "${value}" 2>/dev/null || \
+        log WARN "Config '${option}' rejected (adguardvpn-cli may have deprecated this option)"
+}
+
+_config_set "mode" "${ADGUARD_CONNECTION_TYPE,,}"
+_config_set "update-channel" "$ADGUARD_UPDATE_CHANNEL"
+_config_set "show-hints" "$ADGUARD_SHOW_HINTS"
+_config_set "debug-logging" "$ADGUARD_DEBUG_LOGGING"
+_config_set "show-notifications" "$ADGUARD_SHOW_NOTIFICATIONS"
+_config_set "protocol" "$ADGUARD_PROTOCOL"
+_config_set "post-quantum" "$ADGUARD_POST_QUANTUM"
+_config_set "telemetry" "$([ "${ADGUARD_TELEMETRY,,}" = true ] && echo "on" || echo "off")"
+_config_set "tun-routing-mode" "$ADGUARD_TUN_ROUTING_MODE"
 
 if [ -n "$ADGUARD_BOUND_IF_OVERRIDE" ] && [ "$ADGUARD_BOUND_IF_OVERRIDE" != "" ]; then
-    adguardvpn-cli config set-bound-if-override "$ADGUARD_BOUND_IF_OVERRIDE"
+    _config_set "bound-if-override" "$ADGUARD_BOUND_IF_OVERRIDE"
 else
-    adguardvpn-cli config set-bound-if-override ""
+    _config_set "bound-if-override" ""
 fi
 
 if [ "${ADGUARD_USE_CUSTOM_DNS,,}" = "true" ]; then
-    adguardvpn-cli config set-dns "$ADGUARD_CUSTOM_DNS"
+    _config_set "dns" "$ADGUARD_CUSTOM_DNS"
 fi
 
 if [ "${ADGUARD_SET_SYSTEM_DNS,,}" = false ]; then
