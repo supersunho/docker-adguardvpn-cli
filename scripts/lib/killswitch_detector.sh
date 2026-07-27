@@ -19,7 +19,10 @@
 # =============================================================================
 
 readonly KS_MAX_WAIT_TIME="${ADGUARD_MAX_WAIT_TIME:-60}"
-readonly KS_CHECK_INTERVAL="${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-15}"
+# Default check interval is 8s (reduced from 15s to limit unprotected traffic window).
+# During LEAK_WARNING state, the interval halves for faster detection.
+# Override via ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL environment variable.
+readonly KS_CHECK_INTERVAL="${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-8}"
 readonly KS_MAX_LEAK_TOLERANCE="${ADGUARD_MAX_LEAK_TOLERANCE:-0}"
 readonly KS_LEAK_WARNING_ONLY="${ADGUARD_LEAK_WARNING_ONLY:-false}"
 readonly KS_IP_RETRY_COUNT="${ADGUARD_MAX_IP_DETECTION_RETRIES:-3}"

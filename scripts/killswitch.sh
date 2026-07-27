@@ -64,7 +64,16 @@ SCRIPT_START=$(date +%s)
 # =============================================================================
 
 while true; do
-    sleep "$KS_CHECK_INTERVAL" &
+    # Dynamic check interval: faster checks during LEAK_WARNING to minimize
+    # unprotected traffic, slower checks when in PROTECTED steady state.
+    if ks_is_protected; then
+        sleep "$KS_CHECK_INTERVAL" &
+    else
+        # During LEAK_WARNING or STANDBY, halve the interval for quicker reaction
+        local _fast_interval=$((KS_CHECK_INTERVAL / 2))
+        [ "$_fast_interval" -lt 2 ] && _fast_interval=2
+        sleep "$_fast_interval" &
+    fi
     wait $!
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
     UPTIME=$(( $(date +%s) - SCRIPT_START ))
