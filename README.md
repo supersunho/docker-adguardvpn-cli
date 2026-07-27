@@ -49,7 +49,12 @@
 
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
-This project allows you to use AdguardVPN-CLI within a Docker container. It provides a simple and efficient way to manage AdguardVPN through the command line in a containerized environment.
+A production-ready Docker image that wraps AdGuard VPN CLI with automatic OAuth authentication, a four-state kill-switch for IP leak prevention, and SOCKS5/TUN proxy modes. Designed for:
+
+- **Containerized VPN routing**: Route traffic of other Docker containers (e.g., qBittorrent) through an always-on VPN.
+- **Headless VPN operations**: Device-code OAuth flow handles the one-time browser login; subsequent starts require zero interaction.
+- **Leak-proof networking**: Active IP monitoring terminates the container on any VPN disconnect, with configurable tolerance and detection intervals.
+- **Self-healing**: Transient failures in auth, IP detection, and VPN connection are retried automatically.
 
 <!--
 
