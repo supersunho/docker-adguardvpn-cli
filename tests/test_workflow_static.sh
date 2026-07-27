@@ -157,11 +157,42 @@ test_release_downloads_digest_artifacts() {
     release_block=$(sed -n '/create-release:/,$p' "$workflow")
 
     if echo "$release_block" | grep -q 'actions/download-artifact@v4' && \
-       echo "$release_block" | grep -q 'files: /tmp/digests/\*/digest.txt'; then
+       echo "$release_block" | grep -q 'pattern: digests-' && \
+       echo "$release_block" | grep -q 'digest_files=(/tmp/digests/digests-\*/digest.txt)' && \
+       echo "$release_block" | grep -q 'files: /tmp/digests/digest-\*.txt'; then
         echo "  PASS: Release job downloads digest assets before publishing"
         PASS=$((PASS + 1))
     else
         echo "  FAIL: Release assets are not available to the GitHub Release job"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 11: Stable promotion does not interpolate inputs into shell commands
+# =============================================================================
+
+test_promotion_workflow_uses_safe_inputs() {
+    local workflow="${PROJECT_DIR}/.github/workflows/promote-release.yml"
+    local run_block
+    # shellcheck disable=SC2016 # Intentional literal GitHub Actions expression.
+    run_block=$(awk '
+        /^[[:space:]]+run: \|/ { in_run=1; next }
+        /^[[:space:]]+- name:/ { in_run=0 }
+        in_run { print }
+    ' "$workflow")
+
+    if printf '%s\n' "$run_block" | grep -qF "\${{ inputs."; then
+        echo "  FAIL: Promotion workflow directly interpolates inputs in run blocks"
+        FAIL=$((FAIL + 1))
+    elif grep -qF "ref: \${{ inputs.existing_tag }}" "$workflow" && \
+         grep -q 'TARGET_COMMIT' "$workflow" && \
+         grep -q 'is not a GitHub pre-release' "$workflow" && \
+         grep -q "git tag -f latest \"\\\$TARGET_COMMIT\"" "$workflow"; then
+        echo "  PASS: Promotion workflow validates the existing release commit safely"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Promotion workflow is missing safe commit promotion checks"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -247,6 +278,8 @@ echo ""
 test_latest_alias_is_guarded
 echo ""
 test_release_downloads_digest_artifacts
+echo ""
+test_promotion_workflow_uses_safe_inputs
 echo ""
 
 echo "=========================================="

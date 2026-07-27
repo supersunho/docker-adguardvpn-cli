@@ -228,6 +228,20 @@ test_latest_manifest_is_conditional() {
 }
 
 # =============================================================================
+# Test 13: Summary counts nested digest artifacts
+# =============================================================================
+
+test_summary_counts_digest_files() {
+    if grep -q 'find /tmp/digests -mindepth 2 -maxdepth 2 -name digest.txt' "$WORKFLOW"; then
+        echo "  PASS: Summary counts downloaded digest files"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Summary count ignores nested digest artifacts"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -259,6 +273,8 @@ echo ""
 test_manifest_uses_full_build_version
 echo ""
 test_latest_manifest_is_conditional
+echo ""
+test_summary_counts_digest_files
 echo ""
 
 echo "=========================================="

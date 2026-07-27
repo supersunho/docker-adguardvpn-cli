@@ -4,7 +4,7 @@ set -euo pipefail
 # Test: Docker version pinning
 #
 # Structural tests that validate the Dockerfile consumes AGCLI_VERSION
-# and verifies the installed package version.
+# verifies the installed package version, and fail-closed installer integrity.
 #
 # Full Docker integration tests (build + version check) require
 # a Docker daemon and are marked accordingly.
@@ -102,6 +102,44 @@ test_dockerfile_parses_version_line() {
 }
 
 # =============================================================================
+# Test 6: Dockerfile verifies the release asset digest before execution
+# =============================================================================
+
+test_dockerfile_fails_closed_on_installer_integrity() {
+    local dockerfile="${PROJECT_DIR}/Dockerfile"
+
+    if grep -q 'releases/download/.*install.sh' "$dockerfile" && \
+       grep -q 'assets\[\].*install.sh' "$dockerfile" && \
+       grep -q 'EXPECTED_INSTALL_SHA256' "$dockerfile" && \
+       grep -q 'checksum MISMATCH' "$dockerfile" && \
+       grep -q 'exit 1' "$dockerfile"; then
+        echo "  PASS: Dockerfile fails closed on missing or mismatched installer digest"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile does not enforce release asset integrity"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 7: Dockerfile keeps release JSON on disk for safe parsing
+# =============================================================================
+
+test_dockerfile_uses_file_based_release_metadata() {
+    local dockerfile="${PROJECT_DIR}/Dockerfile"
+
+    if grep -q 'curl -fsSL -o /tmp/release.json' "$dockerfile" && \
+       grep -q 'jq -er.* /tmp/release.json' "$dockerfile" && \
+       ! grep -q 'RELEASE_JSON=' "$dockerfile"; then
+        echo "  PASS: Dockerfile parses release metadata from a file"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile passes release JSON through a shell variable"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Test 6: Workflow passes exact version to Docker build-args
 # =============================================================================
 
@@ -135,6 +173,10 @@ echo ""
 test_dockerfile_passes_package_version_to_installer
 echo ""
 test_dockerfile_parses_version_line
+echo ""
+test_dockerfile_fails_closed_on_installer_integrity
+echo ""
+test_dockerfile_uses_file_based_release_metadata
 echo ""
 test_workflow_passes_exact_version
 echo ""

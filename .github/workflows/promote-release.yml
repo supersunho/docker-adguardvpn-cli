@@ -21,35 +21,75 @@ jobs:
 
         steps:
             - name: 🏷️ Validate tag formats
+              env:
+                  EXISTING_TAG: ${{ inputs.existing_tag }}
+                  PROMOTE_TAG: ${{ inputs.promote_to }}
               run: |
-                EXISTING="${{ inputs.existing_tag }}"
-                PROMOTE="${{ inputs.promote_to }}"
+                set -euo pipefail
 
-                # Validate existing tag is a pre-release
-                if ! echo "$EXISTING" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
-                    echo "❌ existing_tag must be a valid semver (e.g., v2.0.0-beta.2)" >&2
+                # Validate existing tag is a strict pre-release semver.
+                if ! [[ "$EXISTING_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z][0-9A-Za-z.-]*$ ]]; then
+                    echo "❌ existing_tag must be a pre-release semver (e.g., v2.0.0-beta.2)" >&2
                     exit 1
                 fi
-                if ! echo "$PROMOTE" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                if ! [[ "$PROMOTE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                     echo "❌ promote_to must be a stable semver without suffix (e.g., v2.0.0)" >&2
                     exit 1
                 fi
-                echo "✅ Promoting $EXISTING → $PROMOTE"
+                echo "✅ Tag formats are valid: $EXISTING_TAG → $PROMOTE_TAG"
 
             - name: 📦 Checkout
               uses: actions/checkout@v4
               with:
+                ref: ${{ inputs.existing_tag }}
                 fetch-tags: true
                 fetch-depth: 0
 
-            - name: 🏷️ Create stable tag
+            - name: 🔍 Verify release and target commit
+              env:
+                  EXISTING_TAG: ${{ inputs.existing_tag }}
+                  PROMOTE_TAG: ${{ inputs.promote_to }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                git tag -a "${{ inputs.promote_to }}" -m "Promote ${{ inputs.existing_tag }} to stable ${{ inputs.promote_to }}"
-                git push origin "${{ inputs.promote_to }}"
+                set -euo pipefail
+
+                if ! git rev-parse --verify "refs/tags/${EXISTING_TAG}^{commit}" >/dev/null 2>&1; then
+                    echo "❌ Existing tag does not exist: ${EXISTING_TAG}" >&2
+                    exit 1
+                fi
+                if git rev-parse --verify "refs/tags/${PROMOTE_TAG}^{commit}" >/dev/null 2>&1; then
+                    echo "❌ Stable tag already exists: ${PROMOTE_TAG}" >&2
+                    exit 1
+                fi
+
+                RELEASE_JSON=$(curl --fail --silent --show-error \
+                    -H "Authorization: Bearer ${GH_TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${EXISTING_TAG}")
+                if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "true" ]; then
+                    echo "❌ ${EXISTING_TAG} is not a GitHub pre-release" >&2
+                    exit 1
+                fi
+
+                TARGET_COMMIT=$(git rev-parse "refs/tags/${EXISTING_TAG}^{commit}")
+                printf 'TARGET_COMMIT=%s\n' "$TARGET_COMMIT" >> "$GITHUB_ENV"
+                echo "✅ Existing pre-release resolves to ${TARGET_COMMIT}"
+
+            - name: 🏷️ Create stable tag
+              env:
+                  EXISTING_TAG: ${{ inputs.existing_tag }}
+                  PROMOTE_TAG: ${{ inputs.promote_to }}
+              run: |
+                set -euo pipefail
+                git tag -a "$PROMOTE_TAG" "$TARGET_COMMIT" -m "Promote $EXISTING_TAG to stable $PROMOTE_TAG"
+                git push origin "$PROMOTE_TAG"
 
             - name: 🔄 Update latest tag
+              env:
+                  PROMOTE_TAG: ${{ inputs.promote_to }}
               run: |
-                git tag -f latest "${{ inputs.promote_to }}"
+                set -euo pipefail
+                git tag -f latest "$TARGET_COMMIT"
                 git push origin -f latest
 
             - name: 🚀 Create Stable GitHub Release

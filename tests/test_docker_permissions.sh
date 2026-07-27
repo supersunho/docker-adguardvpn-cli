@@ -102,6 +102,26 @@ test_dockerfile_has_build_args() {
 }
 
 # =============================================================================
+# Test 5: Compose ports are restricted to localhost by default
+# =============================================================================
+
+test_compose_ports_are_localhost_only() {
+    local compose="${PROJECT_DIR}/docker-compose.yml"
+
+    if grep -q '^version:' "$compose"; then
+        echo "  FAIL: docker-compose.yml still declares obsolete top-level version"
+        FAIL=$((FAIL + 1))
+    elif grep -q '127.0.0.1:1080:1080' "$compose" && \
+         grep -q '127.0.0.1:6089:6089' "$compose"; then
+        echo "  PASS: Compose ports are localhost-only by default"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Compose ports are not localhost-only by default"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -117,6 +137,8 @@ echo ""
 test_dotenv_has_no_puid_pgid
 echo ""
 test_dockerfile_has_build_args
+echo ""
+test_compose_ports_are_localhost_only
 echo ""
 
 echo "=========================================="

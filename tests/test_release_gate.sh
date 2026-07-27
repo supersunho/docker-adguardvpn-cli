@@ -77,7 +77,8 @@ test_release_mode_has_actionlint() {
     local release_block
     release_block=$(sed -n '/release)/,/;;/p' "$runner" 2>/dev/null || true)
 
-    if echo "$release_block" | grep -q 'actionlint'; then
+    if echo "$release_block" | grep -q 'actionlint' && \
+       grep -q 'workflows/"\*\.yml' "$runner"; then
         echo "  PASS: Release mode includes actionlint"
         PASS=$((PASS + 1))
     else

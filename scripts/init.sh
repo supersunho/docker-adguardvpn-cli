@@ -272,7 +272,7 @@ fi
 # SOCKS5 setup (only in SOCKS mode)
 # =============================================================================
 
-if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+_validate_socks_configuration() {
     # Validate SOCKS credentials — warn if defaults are in use (empty after fix).
     # Upgrade to ERROR when binding to all interfaces (0.0.0.0) without auth.
     local _socks_host="${ADGUARD_SOCKS5_HOST:-127.0.0.1}"
@@ -289,6 +289,10 @@ if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
         log "${_lvl}" "The SOCKS listener is bound to ${_socks_host}:${_socks_port}."
         log "${_lvl}" "Do not expose port ${_socks_port} publicly without authentication."
     fi
+}
+
+if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+    _validate_socks_configuration
     network_init_socks
 fi
 

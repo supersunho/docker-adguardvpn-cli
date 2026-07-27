@@ -135,13 +135,19 @@ jobs:
                   # Step 1: Get AdGuard VPN CLI source version
                   if [ "$SOURCE_VERSION_INPUT" = "latest" ]; then
                     echo "🔍 Fetching latest AdGuard VPN CLI release from upstream..."
-                    RELEASE_DATA=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest)
-                    SOURCE_VERSION=$(echo "$RELEASE_DATA" | jq -r .tag_name)
+                    curl --fail --silent --show-error \
+                      -o /tmp/adguardvpn-release.json \
+                      https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest
+                    SOURCE_VERSION=$(jq -er '.tag_name // empty' /tmp/adguardvpn-release.json)
                     echo "📦 Latest upstream version: $SOURCE_VERSION"
                   else
                     SOURCE_VERSION="$SOURCE_VERSION_INPUT"
                     echo "📌 Using specified source version: $SOURCE_VERSION"
                   fi
+                  if [[ "$SOURCE_VERSION" != v* ]]; then
+                    SOURCE_VERSION="v${SOURCE_VERSION}"
+                  fi
+                  validate_version "resolved source_version" "$SOURCE_VERSION"
 
                   # Step 2: Determine the independent project build version
                   BUILD_VERSION="$BUILD_VERSION_INPUT"
@@ -604,7 +610,7 @@ jobs:
                   ARM64_STATUS=$([ -f /tmp/digests/digests-arm64/digest.txt ] && echo "Success" || echo "Failed")
                   ARMV7_STATUS=$([ -f /tmp/digests/digests-armv7/digest.txt ] && echo "Success" || echo "Failed")
 
-                  BUILD_COUNT=$(find /tmp/digests -mindepth 1 -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+                  BUILD_COUNT=$(find /tmp/digests -mindepth 2 -maxdepth 2 -name digest.txt -type f 2>/dev/null | wc -l | tr -d ' ' || echo "0")
                   BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
                   IMAGE_VERSION="${{ needs.prepare.outputs.build_version_tag }}"
                   PUBLISH_LATEST="${{ needs.prepare.outputs.publish_latest }}"
