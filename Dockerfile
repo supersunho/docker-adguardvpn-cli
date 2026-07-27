@@ -48,7 +48,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
         echo "🔍 Fetching latest AdGuard VPN CLI release..." && \
         ACTUAL_VERSION=$(curl -fsSL https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r '.tag_name // empty') && \
-        echo "📦 Latest version: ${ACTUAL_VERSION}"; \
+        echo "📦 Latest version: ${ACTUAL_VERSION}" && \
+        echo "🔐 Validating release tag format..." && \
+        if ! echo "${ACTUAL_VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then \
+            echo "❌ Invalid release tag from GitHub API: ${ACTUAL_VERSION}" >&2; \
+            echo "❌ Possible MITM or API compromise — expected vX.Y.Z format" >&2; \
+            exit 1; \
+        fi && \
+        echo "✅ Release tag format verified: ${ACTUAL_VERSION}"; \
     else \
         ACTUAL_VERSION="${AGCLI_VERSION}"; \
         echo "📦 Using specified version: ${ACTUAL_VERSION}"; \
