@@ -16,18 +16,47 @@
 # Utility
 # =============================================================================
 
+# Track temporary netrc files for automatic cleanup on container exit.
+# Used by _curl_socks5_args() to avoid credential exposure in ps(1).
+_NETRC_FILES=()
+_NETRC_CLEANUP_REGISTERED=false
+
+_cleanup_netrc_files() {
+    local f
+    for f in "${_NETRC_FILES[@]:-}"; do
+        rm -f "$f" 2>/dev/null || true
+    done
+    _NETRC_FILES=()
+}
+
 # Build base curl arguments common to all direct HTTP requests
 _curl_base_args() {
     echo '-4' '-s' '--connect-timeout' '5' '--max-time' '10'
 }
 
 # Build curl arguments for SOCKS5 proxied requests
+# Uses a temporary .netrc file for credentials instead of -U to prevent
+# credential exposure in process listings (fixes M-1).
 _curl_socks5_args() {
     local proxy_url="socks5://${ADGUARD_SOCKS5_HOST:-127.0.0.1}:${ADGUARD_SOCKS5_PORT:-1080}"
     local args=('-4' '-s' '--connect-timeout' '5' '--max-time' '10' '-x' "$proxy_url")
 
     if [ -n "${ADGUARD_SOCKS5_USERNAME:-}" ] && [ -n "${ADGUARD_SOCKS5_PASSWORD:-}" ]; then
-        args+=('-U' "${ADGUARD_SOCKS5_USERNAME}:${ADGUARD_SOCKS5_PASSWORD}")
+        # Write credentials to a temporary netrc file (chmod 600) to avoid
+        # leaking them via ps(1) or /proc/*/cmdline within the container.
+        local _netrc_file
+        _netrc_file="$(mktemp /tmp/curl-socks-netrc-XXXXXX 2>/dev/null)" || return 0
+        chmod 600 "$_netrc_file"
+        printf 'default login %s password %s\n' \
+            "${ADGUARD_SOCKS5_USERNAME}" "${ADGUARD_SOCKS5_PASSWORD}" > "$_netrc_file"
+        args+=('--netrc-file' "$_netrc_file")
+
+        # Track for automatic cleanup (one-time registration).
+        _NETRC_FILES+=("$_netrc_file")
+        if ! "${_NETRC_CLEANUP_REGISTERED:-false}"; then
+            _NETRC_CLEANUP_REGISTERED=true
+            trap _cleanup_netrc_files EXIT
+        fi
     fi
 
     echo "${args[@]}"
