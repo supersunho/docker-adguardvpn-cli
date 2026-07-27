@@ -8,11 +8,13 @@ services:
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            test: ["CMD-SHELL", "adguardvpn-cli status >/dev/null 2>&1 || exit 1"]
+            # Check for "Connected" in CLI output rather than relying on exit code alone.
+            # The CLI may exit 0 even when disconnected, so we verify the connection text.
+            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE '(Connected|connected)' || exit 1"]
             interval: 1m
             timeout: 10s
-            retries: 2
-            start_period: 30s
+            retries: 5
+            start_period: 5m
         cap_add:
             - NET_ADMIN
         devices:
