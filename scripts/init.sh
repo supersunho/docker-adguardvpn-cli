@@ -266,12 +266,21 @@ fi
 # =============================================================================
 
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
-    # Validate SOCKS credentials — warn if defaults are in use (empty after fix)
+    # Validate SOCKS credentials — warn if defaults are in use (empty after fix).
+    # Upgrade to ERROR when binding to all interfaces (0.0.0.0) without auth.
+    local _socks_host="${ADGUARD_SOCKS5_HOST:-127.0.0.1}"
+    local _socks_port="${ADGUARD_SOCKS5_PORT:-1080}"
+
     if [ -z "${ADGUARD_SOCKS5_USERNAME:-}" ] || [ -z "${ADGUARD_SOCKS5_PASSWORD:-}" ]; then
-        log WARN "SOCKS5 proxy running without authentication — set ADGUARD_SOCKS5_USERNAME"
-        log WARN "and ADGUARD_SOCKS5_PASSWORD to enable proxy authentication."
-        log WARN "The SOCKS listener is bound to ${ADGUARD_SOCKS5_HOST:-127.0.0.1}:${ADGUARD_SOCKS5_PORT:-1080}."
-        log WARN "Do not expose port 1080 publicly without authentication."
+        local _lvl="WARN"
+        if [ "$_socks_host" = "0.0.0.0" ]; then
+            _lvl="ERROR"
+            log_force ERROR "SOCKS5 proxy bound to 0.0.0.0 WITHOUT authentication!"
+        fi
+        log "${_lvl}" "SOCKS5 proxy running without authentication — set ADGUARD_SOCKS5_USERNAME"
+        log "${_lvl}" "and ADGUARD_SOCKS5_PASSWORD to enable proxy authentication."
+        log "${_lvl}" "The SOCKS listener is bound to ${_socks_host}:${_socks_port}."
+        log "${_lvl}" "Do not expose port ${_socks_port} publicly without authentication."
     fi
     network_init_socks
 fi
