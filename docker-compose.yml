@@ -23,3 +23,8 @@ services:
         ports:
             - "1080:1080"          # SOCKS5 proxy (when CONNECTION_TYPE=SOCKS)
             - "6089:6089"          # AdGuard internal API / DNS proxy
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: '1.0'
