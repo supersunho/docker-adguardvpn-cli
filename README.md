@@ -71,6 +71,29 @@ A production-ready Docker image that wraps AdGuard VPN CLI with automatic OAuth 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
+<!-- ARCHITECTURE -->
+
+## Architecture
+
+The container runs four cooperating processes under a single entrypoint:
+
+```text
+docker-entrypoint.sh
+    ├── config_bootstrap()     — Load env vars and validate types
+    ├── IP detection            — Discover public IP for kill-switch baseline
+    ├── init.sh                 — OAuth login → CLI config → VPN connect
+    ├── killswitch.sh           — 4-state monitor (STANDBY→PROTECTED→LEAK_WARNING→TERMINATING)
+    │   └── IP poll every 8s    — Verifies VPN IP is still active
+    └── supervisor (wait $!)    — Blocks on VPN status check; restarts on failure
+```
+
+Key data flows:
+
+- **Auth**: Device-code OAuth URL → user browser → session token persisted in `data/` volume → reused on restart.
+- **Kill switch**: Records real IP before VPN → checks current IP every 8s → if leak detected, increments counter → terminates container at tolerance threshold.
+- **SOCKS mode**: `adguardvpn-cli` runs in SOCKS5 mode (port 1080), while IP detection and healthcheck still operate through the tunnel.
+- **TUN mode**: `adguardvpn-cli` creates a TUN interface with NET_ADMIN; all container traffic is routed through it.
+
 <!-- GETTING STARTED -->
 
 ## Getting Started
