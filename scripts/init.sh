@@ -120,7 +120,9 @@ _oauth_login() {
     sleep 3 &
     wait $! 2>/dev/null || true
 
-    local timeout=1800
+    # Device-code OAuth URLs typically expire after 900s (15 minutes).
+    # Default matches the upstream expiration; allow override via env var.
+    local timeout="${ADGUARD_AUTH_TIMEOUT:-900}"
     local elapsed=0
     local url_printed=false
     local timed_out=false
