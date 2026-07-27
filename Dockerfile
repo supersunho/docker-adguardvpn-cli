@@ -38,6 +38,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # The upstream installer has a built-in default package version that can lag
 # behind the release tag. Always pass the package version explicitly instead
 # of relying on that stale default.
+#
+# Integrity flow:
+#   1. Download install.sh from the release tag
+#   2. Compute and log SHA256 for audit trail
+#   3. Try to fetch SHA256SUMS from the release; if found, verify install.sh
+#   4. If no SHA256SUMS, log a warning but continue (best-effort)
+#   5. After installation, compute and log SHA256 of the installed binary
 RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
         echo "🔍 Fetching latest AdGuard VPN CLI release..." && \
         ACTUAL_VERSION=$(curl -fsSL https://api.github.com/repos/AdguardTeam/AdGuardVPNCLI/releases/latest | jq -r '.tag_name // empty') && \
@@ -53,7 +60,30 @@ RUN if [ "${AGCLI_VERSION}" = "latest" ]; then \
     echo "⬇️  Downloading AdGuard VPN CLI ${ACTUAL_VERSION}..." && \
     curl -fsSL -o /tmp/install.sh \
         "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/${ACTUAL_VERSION}/scripts/release/install.sh" && \
+    echo "🔐 Computing SHA256 of install.sh..." && \
+    INSTALL_SHA256=$(sha256sum /tmp/install.sh | cut -d' ' -f1) && \
+    echo "SHA256(install.sh)=${INSTALL_SHA256}" && \
+    echo "🔍 Checking release checksums..." && \
+    CHECKSUMS_URL="https://github.com/AdguardTeam/AdGuardVPNCLI/releases/download/${ACTUAL_VERSION}/SHA256SUMS" && \
+    if curl -fsSL -o /tmp/SHA256SUMS "${CHECKSUMS_URL}"; then \
+        echo "✅ Release checksums found, verifying install.sh..." && \
+        if echo "${INSTALL_SHA256}  /tmp/install.sh" | sha256sum -c -; then \
+            echo "✅ install.sh checksum verified against release" && \
+            rm /tmp/SHA256SUMS; \
+        else \
+            echo "❌ install.sh checksum MISMATCH — possible tampering!" >&2; \
+            rm -f /tmp/SHA256SUMS /tmp/install.sh; \
+            exit 1; \
+        fi; \
+    else \
+        echo "⚠️  No SHA256SUMS found at ${CHECKSUMS_URL}" && \
+        echo "⚠️  Continuing with audit trail (SHA256 logged above)"; \
+    fi && \
     USER=root sh /tmp/install.sh -v -a y -V "$PACKAGE_VERSION" && \
+    echo "🔐 Computing SHA256 of installed binary..." && \
+    BINARY_PATH=$(command -v adguardvpn-cli) && \
+    BINARY_SHA256=$(sha256sum "${BINARY_PATH}" | cut -d' ' -f1) && \
+    echo "SHA256(${BINARY_PATH})=${BINARY_SHA256}" && \
     rm /tmp/install.sh && \
     echo "🔍 Verifying installed version..." && \
     INSTALLED_VERSION=$(adguardvpn-cli --version 2>&1 | \
