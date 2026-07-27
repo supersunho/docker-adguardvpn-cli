@@ -8,9 +8,10 @@ services:
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            # Check for "Connected" in CLI output rather than relying on exit code alone.
-            # The CLI may exit 0 even when disconnected, so we verify the connection text.
-            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE '(Connected|connected)' || exit 1"]
+            # Use same regex pattern as check_adguard_vpn_status() in vpn_status.sh
+            # for consistency between kill-switch and health check logic.
+            # In SOCKS mode, also verify the proxy listener is accepting connections.
+            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE 'Connected.*mode' || exit 1"]
             interval: 1m
             timeout: 10s
             retries: 5
