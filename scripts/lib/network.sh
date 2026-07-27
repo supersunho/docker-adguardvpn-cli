@@ -34,12 +34,19 @@ _curl_base_args() {
     echo '-4' '-s' '--connect-timeout' '5' '--max-time' '10'
 }
 
-# Build curl arguments for SOCKS5 proxied requests
+# Build curl arguments for SOCKS5 proxied requests using bash nameref.
+# Usage: _curl_socks5_args <array_name>
+#   _curl_socks5_args myarr
+#   curl "${myarr[@]}"
+#
 # Uses a temporary .netrc file for credentials instead of -U to prevent
 # credential exposure in process listings (fixes M-1).
+# Uses nameref to avoid echo/read-ra round-trip that would mangle
+# credentials with special characters (fixes M-2).
 _curl_socks5_args() {
-    local proxy_url="socks5://${ADGUARD_SOCKS5_HOST:-127.0.0.1}:${ADGUARD_SOCKS5_PORT:-1080}"
-    local args=('-4' '-s' '--connect-timeout' '5' '--max-time' '10' '-x' "$proxy_url")
+    local -n _out=$1
+    local _proxy_url="socks5://${ADGUARD_SOCKS5_HOST:-127.0.0.1}:${ADGUARD_SOCKS5_PORT:-1080}"
+    _out=('-4' '-s' '--connect-timeout' '5' '--max-time' '10' '-x' "$_proxy_url")
 
     if [ -n "${ADGUARD_SOCKS5_USERNAME:-}" ] && [ -n "${ADGUARD_SOCKS5_PASSWORD:-}" ]; then
         # Write credentials to a temporary netrc file (chmod 600) to avoid
@@ -49,7 +56,7 @@ _curl_socks5_args() {
         chmod 600 "$_netrc_file"
         printf 'default login %s password %s\n' \
             "${ADGUARD_SOCKS5_USERNAME}" "${ADGUARD_SOCKS5_PASSWORD}" > "$_netrc_file"
-        args+=('--netrc-file' "$_netrc_file")
+        _out+=('--netrc-file' "$_netrc_file")
 
         # Track for automatic cleanup (one-time registration).
         _NETRC_FILES+=("$_netrc_file")
@@ -58,8 +65,6 @@ _curl_socks5_args() {
             trap _cleanup_netrc_files EXIT
         fi
     fi
-
-    echo "${args[@]}"
 }
 
 # =============================================================================
@@ -83,7 +88,7 @@ curl_get() {
 socks5_curl_get() {
     local url="${1:?socks5_curl_get: url required}"
     local -a args
-    read -ra args <<< "$(_curl_socks5_args)"
+    _curl_socks5_args args
     args+=("$url")
     curl "${args[@]}" 2>/dev/null
 }
