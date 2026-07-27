@@ -247,6 +247,13 @@ fi
 # =============================================================================
 
 if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+    # Validate SOCKS credentials — warn if defaults are in use (empty after fix)
+    if [ -z "${ADGUARD_SOCKS5_USERNAME:-}" ] || [ -z "${ADGUARD_SOCKS5_PASSWORD:-}" ]; then
+        log WARN "SOCKS5 proxy running without authentication — set ADGUARD_SOCKS5_USERNAME"
+        log WARN "and ADGUARD_SOCKS5_PASSWORD to enable proxy authentication."
+        log WARN "The SOCKS listener is bound to ${ADGUARD_SOCKS5_HOST:-127.0.0.1}:${ADGUARD_SOCKS5_PORT:-1080}."
+        log WARN "Do not expose port 1080 publicly without authentication."
+    fi
     network_init_socks
 fi
 

@@ -41,13 +41,16 @@ _config_define_schema() {
         "Consecutive authentication failures before resetting the data directory"
 
     # ---------- SOCKS proxy ----------
+    # NOTE: Defaults are intentionally empty to force explicit user configuration.
+    #       The review finding (CRITICAL) flagged hardcoded "username"/"password"
+    #       defaults as trivially guessable credentials.
     _config_add "ADGUARD_SOCKS5_USERNAME" \
-        "string" "username" \
-        "SOCKS5 proxy username"
+        "string" "" \
+        "SOCKS5 proxy username (required when SOCKS connection type is selected)"
 
     _config_add "ADGUARD_SOCKS5_PASSWORD" \
-        "string" "password" \
-        "SOCKS5 proxy password"
+        "string" "" \
+        "SOCKS5 proxy password (required when SOCKS connection type is selected)"
 
     _config_add "ADGUARD_SOCKS5_HOST" \
         "ip" "127.0.0.1" \
