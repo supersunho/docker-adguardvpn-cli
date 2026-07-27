@@ -216,10 +216,62 @@ jobs:
                   echo "✅ Matrix generated with $(echo "$MATRIX" | jq '.include | length') architectures"
 
     ##############################################################################
+    # 1b) Test suite — gates the build
+    ##############################################################################
+    shellcheck:
+        needs: prepare
+        runs-on: ubuntu-latest
+        steps:
+            - name: 📥 Checkout repository
+              uses: actions/checkout@v4
+
+            - name: 🔧 Install ShellCheck
+              run: |
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq shellcheck
+
+            - name: 🔍 Show ShellCheck version
+              run: shellcheck --version
+
+            - name: 🧪 Run ShellCheck
+              run: |
+                  shellcheck -x scripts/*.sh scripts/lib/*.sh tests/*.sh
+
+    unit-tests:
+        needs: prepare
+        runs-on: ubuntu-latest
+        steps:
+            - name: 📥 Checkout repository
+              uses: actions/checkout@v4
+
+            - name: 🔧 Install dependencies
+              run: |
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq shellcheck jq
+
+            - name: 🧪 Run unit tests
+              run: |
+                  cd tests && bash run_tests.sh unit
+
+    actionlint:
+        needs: prepare
+        runs-on: ubuntu-latest
+        steps:
+            - name: 📥 Checkout repository
+              uses: actions/checkout@v4
+
+            - name: 🧪 Run actionlint
+              run: |
+                  docker run --rm \
+                    -v "$(pwd):/repo" \
+                    --workdir /repo \
+                    rhysd/actionlint:latest
+
+    ##############################################################################
     # 2) Build multi-arch images
     ##############################################################################
     build:
-        needs: prepare
+        needs: [prepare, shellcheck, unit-tests, actionlint]
         runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
         permissions:
             contents: read
