@@ -312,6 +312,95 @@ Please check the location and add the city, country or ISO code to `ADGUARD_CONN
 | ZA  | South Africa   | Johannesburg   |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- TROUBLESHOOTING -->
+
+## Troubleshooting
+
+### OAuth authentication fails or times out
+
+The container uses a device-code OAuth flow. On first start, a URL and code are printed to the logs:
+
+```text
+OPEN THIS LINK IN YOUR BROWSER:
+    https://auth.adguard.io/device_code?user_code=XXXX-XXXX
+    Enter the code above to authenticate: XXXX-XXXX
+```
+
+- The link expires after **15 minutes** (configurable via `ADGUARD_AUTH_TIMEOUT`).
+- If you miss the window, the container exits and restarts automatically — look for the new URL in the logs after restart.
+- If authentication repeatedly fails (`ADGUARD_AUTH_RESET_AFTER_FAILURES` consecutive failures, default 3), the data directory is reset and a new OAuth flow begins.
+- To force a fresh authentication, stop the container and delete the mounted data directory (`./data`), then restart.
+
+### "Data directory is not writable" error
+
+The container runs as a non-root user (default UID 1001). If the bind-mounted data directory on the host is owned by a different user (e.g., root), the container cannot write to it:
+
+```text
+ERROR: Data directory is not writable: /home/appuser/.local/share/adguardvpn-cli
+ERROR: Run: sudo chown -R 1001:1001 ./data
+```
+
+Fix: `sudo chown -R 1001:1001 ./data` (adjust UID if you use a custom `PUID` build arg).
+
+### Kill switch terminates the container unexpectedly
+
+The kill switch monitors VPN status and terminates the container on IP leaks. Common causes:
+
+- **Network instability**: DNS or HTTP IP-detection failures trigger termination. Increase `ADGUARD_MAX_IP_DETECTION_RETRIES` or `ADGUARD_IP_DETECTION_RETRY_DELAY` if you have an unreliable network.
+- **High latency connections**: The kill switch check interval (default 8s) may be too fast for some VPN endpoints. Increase `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`.
+- **False positive leak detection**: If the VPN IP and real IP share the same upstream, disable the kill switch (`ADGUARD_USE_KILL_SWITCH=false`).
+
+### Container enters a restart loop
+
+- Check the container logs: `docker compose logs`.
+- Common causes:
+  1. **Missing capabilities**: Ensure `--cap-add NET_ADMIN` and `/dev/net/tun` device are mapped.
+  2. **OAuth not completed**: First start requires browser authentication within the timeout.
+  3. **Network not ready**: IP detection at startup may fail if the Docker bridge is not yet available.
+  4. **Config validation error**: Check for `ADGUARD_*` environment variable syntax errors.
+  5. **Bug**: If none of the above apply, open an [issue](https://github.com/supersunho/docker-adguardvpn-cli/issues).
+
+- **Contact support**: For non-this-project-specific AdGuard VPN help, see the upstream project.
+
+### SOCKS proxy is not working
+
+- Verify `ADGUARD_CONNECTION_TYPE=SOCKS` is set in `.env`.
+- If the SOCKS proxy is publicly exposed, set `ADGUARD_SOCKS5_USERNAME` and `ADGUARD_SOCKS5_PASSWORD` to enable authentication.
+- The SOCKS listener binds to `127.0.0.1:1080` by default. Use `ADGUARD_SOCKS5_HOST=0.0.0.0` to listen on all interfaces (requires Docker port publishing).
+
+### Port 6881 / 6089 — what are these?
+
+- **1080**: SOCKS5 proxy port (when `ADGUARD_CONNECTION_TYPE=SOCKS`).
+- **6089**: AdGuard VPN CLI internal API / DNS proxy port. Used for DNS filtering features.
+- **6881 (TCP+UDP)**: BitTorrent DHT / peer port. Included for qBittorrent integration in the compose example. Bind to localhost on the host side if not using BitTorrent: `127.0.0.1:6881:6881`.
+
+<!-- SECURITY CONSIDERATIONS -->
+
+## Security Considerations
+
+### NOPASSWD sudo for appuser
+
+The Dockerfile grants `appuser` passwordless sudo (`NOPASSWD:ALL`). This is required by `adguardvpn-cli` for TUN interface setup in containers. While this is standard practice for single-purpose containers where `NET_ADMIN` is already granted, be aware that any process running inside the container has effective root-equivalent access.
+
+### curl | sh installation pattern
+
+The Dockerfile fetches and executes an upstream install script directly from GitHub. This is inherent to the current AdGuard VPN CLI distribution model. Mitigations include:
+
+- SHA256 computation and logging of both `install.sh` and the installed binary for audit trail.
+- Best-effort verification against the release's `SHA256SUMS` file when available (the build fails on checksum mismatch).
+- Validation of the GitHub API release tag against a semver pattern (`^vX.Y.Z`) to catch anomalous responses.
+
+### Exposed ports in production
+
+The default `docker-compose.yml` exposes `1080:1080` (SOCKS5). If you do not need SOCKS5 access from the host, remove the `ports` section or bind to localhost (`127.0.0.1:1080:1080`).
+
+Do **not** expose port `6089` to the public internet — it is an internal API and DNS proxy port used by AdGuard VPN CLI for DNS filtering configuration and health checking.
+
+### Build context sensitivity
+
+The `.dockerignore` file excludes `.env` and `.env.example` from the build context. Verify your `.dockerignore` is present if you rebuild the image, or your environment file may leak into the image layers.
+
 <!-- ACKNOWLEDGMENTS -->
 
 ## References
