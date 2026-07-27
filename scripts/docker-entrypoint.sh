@@ -163,16 +163,23 @@ REAL_IP="ERROR"
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Detecting current IP before VPN..."
-
-    if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
-        log INFO "SOCKS mode: using direct IP detection"
-        REAL_IP=$(get_public_ip_direct 2>/dev/null) || REAL_IP="ERROR"
-    else
-        REAL_IP=$(get_public_ip 2>/dev/null) || REAL_IP="ERROR"
-    fi
+    # Retry IP detection up to 3 times with 5s delay to tolerate transient
+    # network unavailability at container startup (e.g. Docker bridge not ready).
+    REAL_IP="ERROR"
+    for _attempt in 1 2 3; do
+        if [ "${ADGUARD_CONNECTION_TYPE,,}" = "socks" ]; then
+            REAL_IP=$(get_public_ip_direct 2>/dev/null) || REAL_IP="ERROR"
+        else
+            REAL_IP=$(get_public_ip 2>/dev/null) || REAL_IP="ERROR"
+        fi
+        if [ -n "$REAL_IP" ] && [ "$REAL_IP" != "ERROR" ]; then
+            break
+        fi
+        [ "$_attempt" -lt 3 ] && sleep 5
+    done
 
     if [ "$REAL_IP" = "ERROR" ] || [ -z "$REAL_IP" ]; then
-        log ERROR "Failed to detect current IP before VPN connection"
+        log ERROR "Failed to detect current IP before VPN connection (3 attempts)"
         log ERROR "Ensure network connectivity before starting VPN with kill switch"
         exit 1
     fi
