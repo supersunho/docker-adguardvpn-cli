@@ -1,0 +1,26 @@
+# Git and version control
+.git
+.gitignore
+
+# Environment secrets — must never enter build context
+.env
+.env.example
+
+# Development and documentation
+docs/
+README.md
+docker-compose.yml
+
+# CI/CD
+.github/
+.shellcheckrc
+
+# Tests — not needed in production image
+tests/
+
+# Local IDE / OS files
+.DS_Store
+.editorconfig
+*.swp
+*.swo
+*~
