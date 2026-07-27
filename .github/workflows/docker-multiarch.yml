@@ -414,7 +414,9 @@ jobs:
                   build-args: |
                       AGCLI_VERSION=${{ needs.prepare.outputs.source_version_exact }}
                   tags: ${{ steps.image-tags.outputs.tags }}
-                  provenance: false
+                  # Provenance attestation (SLSA) for supply-chain security.
+                  provenance: true
+                  sbom: true
 
             - name: 🧪 Comprehensive container verification
               if: steps.check-images.outputs.build_image == 'true' && github.event.inputs.verify_build == 'true'
