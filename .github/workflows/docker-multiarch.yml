@@ -241,7 +241,7 @@ jobs:
 
             - name: 🧪 Run ShellCheck
               run: |
-                  shellcheck -x scripts/*.sh scripts/lib/*.sh tests/*.sh
+                  shellcheck --severity=error -x scripts/*.sh scripts/lib/*.sh tests/*.sh
 
     unit-tests:
         needs: prepare

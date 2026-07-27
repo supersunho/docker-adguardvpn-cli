@@ -146,7 +146,10 @@ test_save_method_mode_600() {
 
     if [ -f "$cache" ]; then
         local perms
-        perms=$(stat -f "%Lp" "$cache" 2>/dev/null || stat -c "%a" "$cache" 2>/dev/null || echo "unknown")
+        # GNU stat returns filesystem information for -f, even with a zero
+        # exit status. Try its file-mode format first, then BSD/macOS stat.
+        perms=$(stat -c "%a" "$cache" 2>/dev/null || \
+            stat -f "%Lp" "$cache" 2>/dev/null || echo "unknown")
         if [ "$perms" = "600" ]; then
             echo "  PASS: cache file mode is 600"
             PASS=$((PASS + 1))
