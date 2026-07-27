@@ -403,6 +403,42 @@ The kill switch monitors VPN status and terminates the container on IP leaks. Co
 - **6089**: AdGuard VPN CLI internal API / DNS proxy port. Used for DNS filtering features.
 - **6881 (TCP+UDP)**: BitTorrent DHT / peer port. Included for qBittorrent integration in the compose example. Bind to localhost on the host side if not using BitTorrent: `127.0.0.1:6881:6881`.
 
+### Updating
+
+To update to the latest image:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+This pulls the latest tagged image and recreates the container if the image changed.
+
+### Verifying VPN Protection
+
+To confirm the VPN tunnel is active and your traffic is routed through it:
+
+1. **Check VPN status**:
+   ```bash
+   docker compose exec adguard-vpn-cli adguardvpn-cli status
+   ```
+   Look for `Connected` in the output.
+
+2. **Compare public IP with and without the VPN**:
+   ```bash
+   # From inside the container (through the VPN)
+   docker compose exec adguard-vpn-cli curl -4 -s ifconfig.me
+
+   # From the host directly (without the VPN)
+   curl -4 -s ifconfig.me
+   ```
+   The two IPs should differ — matching output means the VPN tunnel is not routing traffic.
+
+3. **Verify kill switch behavior**:
+   ```bash
+   docker compose exec adguard-vpn-cli adguardvpn-cli disconnect
+   ```
+   The kill switch should detect the leak and terminate the container within the configured check interval.
+
 <!-- SECURITY CONSIDERATIONS -->
 
 ## Security Considerations
