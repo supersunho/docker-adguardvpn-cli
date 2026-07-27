@@ -1,0 +1,67 @@
+name: Promote Release to Stable
+
+on:
+    workflow_dispatch:
+        inputs:
+            existing_tag:
+                description: "Existing pre-release tag to promote (e.g., v2.0.0-beta.2)"
+                required: true
+                type: string
+
+            promote_to:
+                description: "Stable version tag (e.g., v2.0.0)"
+                required: true
+                type: string
+
+jobs:
+    promote:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - name: 🏷️ Validate tag formats
+              run: |
+                EXISTING="${{ inputs.existing_tag }}"
+                PROMOTE="${{ inputs.promote_to }}"
+
+                # Validate existing tag is a pre-release
+                if ! echo "$EXISTING" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+                    echo "❌ existing_tag must be a valid semver (e.g., v2.0.0-beta.2)" >&2
+                    exit 1
+                fi
+                if ! echo "$PROMOTE" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "❌ promote_to must be a stable semver without suffix (e.g., v2.0.0)" >&2
+                    exit 1
+                fi
+                echo "✅ Promoting $EXISTING → $PROMOTE"
+
+            - name: 📦 Checkout
+              uses: actions/checkout@v4
+              with:
+                fetch-tags: true
+                fetch-depth: 0
+
+            - name: 🏷️ Create stable tag
+              run: |
+                git tag -a "${{ inputs.promote_to }}" -m "Promote ${{ inputs.existing_tag }} to stable ${{ inputs.promote_to }}"
+                git push origin "${{ inputs.promote_to }}"
+
+            - name: 🔄 Update latest tag
+              run: |
+                git tag -f latest "${{ inputs.promote_to }}"
+                git push origin -f latest
+
+            - name: 🚀 Create Stable GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ inputs.promote_to }}
+                  name: "AdGuard VPN CLI Release ${{ inputs.promote_to }}"
+                  body: |
+                    **Promoted from:** ${{ inputs.existing_tag }}
+
+                    This stable release corresponds to the previously published pre-release.
+                  prerelease: false
+                  make_latest: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
