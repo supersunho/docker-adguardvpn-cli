@@ -1,5 +1,164 @@
-/.env
-.history
-docs
+# -----------------------------------------------------------------------------
+# DOTFILES / AI TOOLS / EDITOR CONFIGS (catch-all)
+#    Ignore ALL dotfiles/dotdirs, then explicitly allow what you WANT tracked
+# -----------------------------------------------------------------------------
+.*
+# ── Exceptions (add/remove per project) ──────────────────────────────────────
+!.gitignore
+!.env.sample
+!.github/workflows/
+!.editorconfig
+# !.prettierrc
+# !.eslintrc.json
+
+# -----------------------------------------------------------------------------
+# DEPENDENCIES / PACKAGE MANAGERS
+# -----------------------------------------------------------------------------
+# Node.js
+node_modules/
+.pnp
+.pnp.js
+
+# Python
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+__pypackages__/
+
+# Rust
+target/
+Cargo.lock
+
+# Go
+vendor/
+
+# Java / Maven / Gradle
+.mvn/
+.gradle/
+target/
+*.jar
+*.war
+*.ear
+
+# PHP
+vendor/
+composer.lock
+
+# Ruby
+.bundle/
+vendor/bundle/
+
+# .NET
+packages/
+*.nupkg
+
+# -----------------------------------------------------------------------------
+# BUILD OUTPUTS / ARTIFACTS
+# -----------------------------------------------------------------------------
+# Generic
+dist/
+build/
+out/
+bin/
+obj/
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.tox/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.typereport/
+
+# Node.js / TypeScript
+*.tsbuildinfo
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+.parcel-cache/
+.turbo/
+.esbuild/
+
+# Rust
+target/
+
+# Go
+*.exe
+*.test
+*.prof
+
+# Java
+*.class
+*.log
+
+# -----------------------------------------------------------------------------
+# OS / FILESYSTEM
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
 *.bak
-*.bak2
+*.tmp
+*.temp
+
+# -----------------------------------------------------------------------------
+# 6. LOGS / DATABASES / CACHE
+# -----------------------------------------------------------------------------
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+.cache/
+*.cache
+
+# -----------------------------------------------------------------------------
+# TEST / COVERAGE / REPORTS
+# -----------------------------------------------------------------------------
+coverage/
+.nyc_output/
+htmlcov/
+.tox/
+.nojekyll
+
+# -----------------------------------------------------------------------------
+# DOCKER / CONTAINERS
+# -----------------------------------------------------------------------------
+.docker/
+docker-compose.override.yml
+
+# -----------------------------------------------------------------------------
+# SECRETS / LOCAL CONFIG (never commit)
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# -----------------------------------------------------------------------------
+# MISC
+# -----------------------------------------------------------------------------
+*.orig
+*.rej
+.*.orig
+.*.rej
+*.patch
+*.diff
