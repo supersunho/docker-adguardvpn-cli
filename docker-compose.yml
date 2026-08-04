@@ -3,6 +3,7 @@ services:
         image: supersunho/adguardvpn-cli:latest
         restart: unless-stopped
         container_name: adguard-vpn-cli
+        mac_address: "02:42:ac:11:00:10"  # keep fixed — a changing MAC drops the license, see README
         env_file: .env
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli

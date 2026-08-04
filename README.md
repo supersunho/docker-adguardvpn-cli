@@ -147,6 +147,9 @@ docker compose up -d
 
 If authentication fails three consecutive times, the persisted AdGuard data is reset and the browser flow is requested again. Adjust `ADGUARD_AUTH_RESET_AFTER_FAILURES` if needed.
 
+> [!WARNING]
+> **MAC address changes drop the license on every restart.** AdGuard VPN CLI ties its license to the container's network device. Docker's default bridge network assigns a new MAC address on every container restart, which makes the CLI treat the session as a different device and silently invalidate it — even though the volume still holds valid data. Pin a fixed `mac_address:` in your compose file (see example below) so the license survives restarts. Use a locally-administered address (second hex digit of the first byte is `2`, `6`, `a`, or `e`, e.g. `02:xx:xx:xx:xx:xx`) and keep it unique per container on the same network to avoid conflicts.
+
 <!-- USAGE EXAMPLES -->
 
 ## How to use
@@ -159,6 +162,7 @@ services:
         image: supersunho/adguardvpn-cli:latest
         restart: unless-stopped
         container_name: adguard-vpn-cli
+        mac_address: "02:42:ac:11:00:10"  # keep fixed — see MAC address warning above
         env_file: .env
         volumes:
             - adguard-auth:/home/appuser/.local/share/adguardvpn-cli
