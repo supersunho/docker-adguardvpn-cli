@@ -4,13 +4,22 @@ ARG PUID=1001
 ARG PGID=1001
 ARG AGCLI_VERSION=latest
 
-ENV DEBIAN_FRONTEND=noninteractive 
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Default timezone. /etc/localtime must always point at a *file* under
+# /usr/share/zoneinfo; an unset/invalid TZ would otherwise link the bare
+# zoneinfo directory. Fall back to Etc/UTC when the requested TZ is unknown.
+ARG TZ=Etc/UTC
 
 RUN echo "🔍 Setting up Ubuntu 24.04 LTS build environment..." && \
     echo "🏗️ Configuring Ubuntu for maximum compatibility..." && \
     export DEBIAN_FRONTEND=noninteractive && \
-    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
-    echo $TZ > /etc/timezone && \
+    if [ ! -f "/usr/share/zoneinfo/${TZ}" ]; then \
+        echo "⚠️ Invalid timezone '${TZ}' — falling back to Etc/UTC" && \
+        TZ=Etc/UTC; \
+    fi && \
+    ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime && \
+    echo "${TZ}" > /etc/timezone && \
     echo "⚙️ Configuring APT cache for optimal build performance..." && \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
