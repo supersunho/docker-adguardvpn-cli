@@ -199,6 +199,8 @@ volumes:
     adguard-auth:
 ```
 
+> The `network_mode: service:adguard-vpn-cli` example shares the VPN container's network namespace, so any sidecar (qBittorrent or otherwise) automatically observes the VPN container's effective MAC. The MAC-sharing behavior was verified with a namespace-equivalent sidecar — a specific qBittorrent image's startup, WebUI, or BitTorrent handshake was **not** included in the automated end-to-end checks. If you need application-level verification, provide the exact qBittorrent image/tag and Build Verifier can run an additional smoke test; the result is a network-namespacing confirmation, not an identity-feature regression.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Prerequisites
@@ -209,6 +211,7 @@ volumes:
 | ADGUARD_CONNECTION_TYPE                | VPN operating mode                                                                                                                    | TUN           | TUN / SOCKS                  |
 | ADGUARD_AUTH_RESET_AFTER_FAILURES      | Consecutive authentication failures before resetting the data directory                                                               | 3             | Positive integer             |
 | ADGUARD_AUTH_TIMEOUT                 | Device-code OAuth timeout in seconds                                                                                                  | 900           | Positive integer             |
+| ADGUARD_PERSISTENT_IDENTITY            | Persist and reapply the container primary-interface MAC across `docker compose up/down` (auth reset keeps the file; OAuth session is still cleared) | false         | true / false                 |
 | ADGUARD_SOCKS5_USERNAME                | SOCKS5 proxy username                                                                                                                 |               |                              |
 | ADGUARD_SOCKS5_PASSWORD                | SOCKS5 proxy password                                                                                                                 |               |                              |
 | ADGUARD_SOCKS5_HOST                    | SOCKS5 proxy host address                                                                                                             | 127.0.0.1     | IPv4 address                 |
@@ -236,6 +239,7 @@ volumes:
 | ADGUARD_SHOW_LOG_LEVEL                 | Container log level filter                                                                                                            | INFO          | DEBUG / INFO / WARN / ERROR  |
 | ADGUARD_SHOW_SUMMARY                   | Show kill switch periodic summary in container logs                                                                                   | true          | true / false                 |
 | ADGUARD_MAX_WAIT_TIME                  | Maximum wait time in seconds for the AdGuard VPN log file to appear                                                                   | 60            | Positive integer             |
+| ADGUARD_VPN_STARTUP_GRACE_SECONDS      | Seconds to allow the VPN tunnel to establish before the status supervisor treats a not-connected check as failure                     | 30            | Integer 0-600                |
 | PUID                                   | **[Build-time only]** User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu user at 1000)   | 1001          | Positive integer (build arg) |
 | PGID                                   | **[Build-time only]** Group ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu group at 1000) | 1001          | Positive integer (build arg) |
 
@@ -245,6 +249,8 @@ volumes:
 > - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
 > - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
 > - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
+> - `ADGUARD_PERSISTENT_IDENTITY`: Default `false` keeps the existing behavior — no filesystem or network changes for identity. Set to `true` to keep the container's in-namespace primary-interface effective MAC reapplied across `docker compose up/down`. Docker's per-endpoint MAC metadata (visible via `docker inspect`) may differ from the in-namespace effective MAC and is not guaranteed to be stable; see the [Verified scope](README.md#persistent-container-identity) section below. The intended effect is fewer forced re-authentications after recreation, but server-side fingerprinting may still require a re-login. When `true`, the entrypoint generates a locally administered unicast MAC on first boot, persists it under `<DATA_DIR>/identity/mac` (mode 0600 inside a 0700 directory), and reapplies it on every container start. The OAuth/CLI session is still cleared on auth reset, but the identity file is preserved so the MAC survives. The `ip` mutation uses the image's passwordless `sudo` rule; the image already includes `NET_ADMIN`, which the default `docker-compose.yml` keeps. The identity file is removed by an explicit `rm data/identity/mac` (identity rotation — may cause upstream re-authentication). The feature is **not supported** in `network_mode: host`, macvlan, Docker Desktop, or rootless Docker.
+> - `ADGUARD_VPN_STARTUP_GRACE_SECONDS`: Default 30. Set to `0` to restore the legacy immediate-check semantics. Bounded to 0-600.
 > - **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -338,6 +344,59 @@ Please check the location and add the city, country or ISO code to `ADGUARD_CONN
 | US  | United States  | Chicago        |
 | VN  | Vietnam        | Hanoi          |
 | ZA  | South Africa   | Johannesburg   |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- PERSISTENT IDENTITY -->
+
+## Persistent Container Identity
+
+`ADGUARD_PERSISTENT_IDENTITY` is an opt-in feature that reapplies the container's in-namespace primary-interface effective MAC across `docker compose up/down`. Without it, the interface MAC that Docker assigns at container creation can rotate on every recreate, which AdGuard's server-side fingerprinting may detect and require a browser re-authentication. Note that this only addresses the in-namespace MAC — Docker's per-endpoint MAC metadata (visible via `docker inspect`) is set at container creation and is not part of the guarantee; see [Verified scope](README.md#persistent-container-identity) below.
+
+### Enabling
+
+Add to `.env`:
+
+```dotenv
+ADGUARD_PERSISTENT_IDENTITY=true
+```
+
+Behavior:
+
+- On first boot, the entrypoint generates a locally administered unicast MAC from `/dev/urandom`, writes it to `<DATA_DIR>/identity/mac` (mode 0600 inside a 0700 directory), and applies it to the default-route interface via `sudo -n ip link set`.
+- On every subsequent boot, the entrypoint re-reads the file, applies the stored MAC, and verifies the post-apply effective MAC matches. A mismatch or `ip link set` failure is **fail-closed** with exit 78 before any OAuth/CLI side effect.
+- If a previous AdGuard session (`active/`, `cli-home/`, OAuth data) is already present in the data volume, the current interface MAC is reused (smart-reuse). This prevents the first opt-in rotation but **does not guarantee** that the previous container's MAC or the OAuth session's server-side identity is preserved — the upstream AdGuard server may still treat the new install as a new device.
+- Auth-reset (`_reset_auth_data`) clears OAuth/CLI state but preserves `<DATA_DIR>/identity/`, so the MAC survives an auth failure. Browser re-authentication is still required.
+
+### Verifying
+
+Inside the running container:
+
+```bash
+cat /home/appuser/.local/share/adguardvpn-cli/identity/mac
+ip -br link show eth0   # link/ether should match the file
+```
+
+### Manual rotation
+
+To deliberately rotate the in-namespace effective MAC (this may cause the upstream AdGuard server to require re-authentication):
+
+```bash
+rm -f data/identity/mac
+docker compose up -d    # next boot regenerates
+```
+
+### Requirements and limits
+
+- Requires the image's `appuser ALL=(root) NOPASSWD: ALL` rule (installed by the Dockerfile) and `NET_ADMIN` capability (default in `docker-compose.yml`).
+- Hardened SOCKS deployments that drop `NET_ADMIN` will fail closed (exit 78) when this option is enabled. Plain SOCKS without `NET_ADMIN` continues to work, but only with `ADGUARD_PERSISTENT_IDENTITY=false`.
+- Each VPN container must have its **own** `./data` volume. Multiple containers sharing a single `data/identity/mac` will collide on the same MAC and the same first-boot write race; that configuration is not supported.
+- `network_mode: service:adguard-vpn-cli` (the qBittorrent-in-shared-namespace pattern in `How to use`) automatically inherits the VPN container's MAC — no extra configuration needed.
+- **Not supported** in `network_mode: host`, macvlan, Docker Desktop (without privileged Linux VM), or rootless Docker. The default `docker-compose.yml` is the only verified target.
+
+### Verified scope
+
+The guarantee covers the container's **network namespace effective MAC** as reported by `ip link show <iface>`. Docker's per-endpoint MAC metadata (`docker inspect --format '{{.NetworkSettings.MacAddress}}'`) is set at container creation and may diverge from the in-namespace effective MAC. In the verified Linux bridge environment, this divergence did not break egress or gateway ARP, but acceptance criteria should compare the in-namespace `ip link` value to `data/identity/mac` rather than `docker inspect` output.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
