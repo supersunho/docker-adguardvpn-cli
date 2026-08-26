@@ -1,53 +1,23 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
-
 <a id="readme-top"></a>
-
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
-
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
 
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 
 <div align="center">
-  <!-- <a href="https://github.com/supersunho/docker-adguardvpn-cli">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
-  </a> -->
 
 <h3 align="center">Docker-AdguardVPN-CLI</h3>
 
   <p align="center">
     <a href="https://github.com/AdguardTeam/AdGuardVPNCLI">AdGuard VPN CLI</a> within a Docker container
-    <!-- <br />
-    <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
-    <br /> -->
     <br />
-    <!-- <a href="https://github.com/github_username/repo_name">View Demo</a>
-    &middot; -->
     <a href="https://github.com/supersunho/docker-adguardvpn-cli/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     &middot;
     <a href="https://github.com/supersunho/docker-adguardvpn-cli/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
-<!-- ABOUT THE PROJECT -->
 
 ## About The Project
-
-<!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
 A production-ready Docker image that wraps AdGuard VPN CLI with automatic OAuth authentication, a four-state kill-switch for IP leak prevention, and SOCKS5/TUN proxy modes. Designed for:
 
@@ -56,20 +26,6 @@ A production-ready Docker image that wraps AdGuard VPN CLI with automatic OAuth 
 - **Leak-proof networking**: Active IP monitoring terminates the container on any VPN disconnect, with configurable tolerance and detection intervals.
 - **Self-healing**: Transient failures in auth, IP detection, and VPN connection are retried automatically.
 
-<!--
-
-### Built With
-
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url]
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
 <!-- ARCHITECTURE -->
 
@@ -199,59 +155,66 @@ volumes:
     adguard-auth:
 ```
 
-> The `network_mode: service:adguard-vpn-cli` example shares the VPN container's network namespace, so any sidecar (qBittorrent or otherwise) automatically observes the VPN container's effective MAC. The MAC-sharing behavior was verified with a namespace-equivalent sidecar — a specific qBittorrent image's startup, WebUI, or BitTorrent handshake was **not** included in the automated end-to-end checks. If you need application-level verification, provide the exact qBittorrent image/tag and Build Verifier can run an additional smoke test; the result is a network-namespacing confirmation, not an identity-feature regression.
+> A sidecar with `network_mode: service:adguard-vpn-cli` automatically shares the VPN container's network namespace, including its effective MAC. This is a Docker networking guarantee, not an identity-feature contract — see [Verified scope](#verified-scope) below.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Prerequisites
 
-| Variable                               | Description                                                                                                                           | Default value | Allowed values               |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------- |
-| ADGUARD_CONNECTION_LOCATION            | VPN server location code                                                                                                              | JP            | e.g. JP, US, SG, NL          |
-| ADGUARD_CONNECTION_TYPE                | VPN operating mode                                                                                                                    | TUN           | TUN / SOCKS                  |
-| ADGUARD_AUTH_RESET_AFTER_FAILURES      | Consecutive authentication failures before resetting the data directory                                                               | 3             | Positive integer             |
-| ADGUARD_AUTH_TIMEOUT                 | Device-code OAuth timeout in seconds                                                                                                  | 900           | Positive integer             |
-| ADGUARD_PERSISTENT_IDENTITY            | Persist and reapply the container primary-interface MAC across `docker compose up/down` (auth reset keeps the file; OAuth session is still cleared) | false         | true / false                 |
-| ADGUARD_SOCKS5_USERNAME                | SOCKS5 proxy username                                                                                                                 |               |                              |
-| ADGUARD_SOCKS5_PASSWORD                | SOCKS5 proxy password                                                                                                                 |               |                              |
-| ADGUARD_SOCKS5_HOST                    | SOCKS5 proxy host address                                                                                                             | 127.0.0.1     | IPv4 address                 |
-| ADGUARD_SOCKS5_PORT                    | SOCKS5 proxy port                                                                                                                     | 1080          | Port 1-65535                 |
-| ADGUARD_USE_KILL_SWITCH                | Enable kill switch to prevent IP leaks when VPN drops                                                                                 | true          | true / false                 |
-| ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL | Kill switch check interval in seconds                                                                                                 | 8             | Positive integer             |
-| ADGUARD_MAX_LEAK_TOLERANCE             | Number of leak detections before termination (0 = immediate)                                                                          | 0             | Positive integer             |
-| ADGUARD_LEAK_WARNING_ONLY              | Only warn on leaks, do not terminate                                                                                                  | false         | true / false                 |
-| ADGUARD_MAX_IP_DETECTION_RETRIES       | Maximum IP detection retry attempts                                                                                                   | 3             | Positive integer             |
-| ADGUARD_IP_DETECTION_RETRY_DELAY       | Delay in seconds between IP detection retries                                                                                         | 10            | Positive integer             |
-| ADGUARD_USE_CUSTOM_DNS                 | Use a custom DNS server instead of the system default                                                                                 | true          | true / false                 |
-| ADGUARD_CUSTOM_DNS                     | Custom DNS server address                                                                                                             | 1.1.1.1       | IPv4 or hostname             |
-| ADGUARD_SET_SYSTEM_DNS                 | Allow AdGuard VPN to change the system DNS configuration                                                                              | false         | true / false                 |
-| ADGUARD_SEND_REPORTS                   | Send crash reports to AdGuard                                                                                                         | false         | true / false                 |
-| ADGUARD_TELEMETRY                      | Send anonymous telemetry data                                                                                                         | false         | true / false                 |
-| ADGUARD_AUTO_UPDATE                    | Automatically update AdGuard VPN CLI on startup                                                                                       | false         | true / false                 |
-| ADGUARD_UPDATE_CHANNEL                 | Update channel                                                                                                                        | release       | release / beta / dev         |
-| ADGUARD_SHOW_HINTS                     | Show CLI usage hints                                                                                                                  | on            | on / off                     |
-| ADGUARD_SHOW_NOTIFICATIONS             | Show desktop notifications                                                                                                            | on            | on / off                     |
-| ADGUARD_PROTOCOL                       | VPN protocol                                                                                                                          | auto          | auto / TCP / QUIC            |
-| ADGUARD_POST_QUANTUM                   | Post-quantum encryption                                                                                                               | off           | on / off                     |
-| ADGUARD_TUN_ROUTING_MODE               | TUN routing mode                                                                                                                      | AUTO          | AUTO / TUN_ONLY / PROXY_ONLY |
-| ADGUARD_BOUND_IF_OVERRIDE              | Override bound network interface (empty = auto)                                                                                       |               | Interface name or empty      |
-| ADGUARD_SHOW_LOG                       | Master switch for container log output (false = silent, except critical messages like OAuth URL)                                      | true          | true / false                 |
-| ADGUARD_SHOW_LOG_LEVEL                 | Container log level filter                                                                                                            | INFO          | DEBUG / INFO / WARN / ERROR  |
-| ADGUARD_SHOW_SUMMARY                   | Show kill switch periodic summary in container logs                                                                                   | true          | true / false                 |
-| ADGUARD_MAX_WAIT_TIME                  | Maximum wait time in seconds for the AdGuard VPN log file to appear                                                                   | 60            | Positive integer             |
-| ADGUARD_VPN_STARTUP_GRACE_SECONDS      | Seconds to allow the VPN tunnel to establish before the status supervisor treats a not-connected check as failure                     | 30            | Integer 0-600                |
-| PUID                                   | **[Build-time only]** User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu user at 1000)   | 1001          | Positive integer (build arg) |
-| PGID                                   | **[Build-time only]** Group ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in ubuntu group at 1000) | 1001          | Positive integer (build arg) |
+| Variable | Description | Default | Allowed values |
+| --- | --- | --- | --- |
+| **Connection** | | | |
+| `ADGUARD_CONNECTION_LOCATION` | VPN server location code | `JP` | e.g. `JP`, `US`, `SG`, `NL` |
+| `ADGUARD_CONNECTION_TYPE` | VPN operating mode | `TUN` | `TUN` / `SOCKS` |
+| `ADGUARD_PROTOCOL` | VPN protocol | `auto` | `auto` / `TCP` / `QUIC` |
+| `ADGUARD_POST_QUANTUM` | Post-quantum encryption | `off` | `on` / `off` |
+| `ADGUARD_TUN_ROUTING_MODE` | TUN routing mode | `AUTO` | `AUTO` / `TUN_ONLY` / `PROXY_ONLY` |
+| `ADGUARD_BOUND_IF_OVERRIDE` | Override bound network interface (empty = auto) | _(empty)_ | Interface name or empty |
+| **Authentication** | | | |
+| `ADGUARD_AUTH_TIMEOUT` | Device-code OAuth timeout in seconds | `900` | Positive integer |
+| `ADGUARD_AUTH_RESET_AFTER_FAILURES` | Consecutive auth failures before resetting the data directory | `3` | Positive integer |
+| **SOCKS proxy** _(when `ADGUARD_CONNECTION_TYPE=SOCKS`)_ | | | |
+| `ADGUARD_SOCKS5_USERNAME` | SOCKS5 proxy username | _(empty)_ | |
+| `ADGUARD_SOCKS5_PASSWORD` | SOCKS5 proxy password | _(empty)_ | |
+| `ADGUARD_SOCKS5_HOST` | SOCKS5 proxy host address | `127.0.0.1` | IPv4 address |
+| `ADGUARD_SOCKS5_PORT` | SOCKS5 proxy port | `1080` | Port 1-65535 |
+| **Kill switch** | | | |
+| `ADGUARD_USE_KILL_SWITCH` | Enable kill switch to prevent IP leaks when VPN drops | `true` | `true` / `false` |
+| `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | Kill switch check interval in seconds | `8` | Positive integer |
+| `ADGUARD_MAX_LEAK_TOLERANCE` | Number of leak detections before termination (0 = immediate) | `0` | Positive integer |
+| `ADGUARD_LEAK_WARNING_ONLY` | Only warn on leaks, do not terminate | `false` | `true` / `false` |
+| `ADGUARD_VPN_STARTUP_GRACE_SECONDS` | Seconds allowed for VPN tunnel to establish before supervisor treats not-connected as failure | `30` | Integer 0-600 |
+| **IP detection** | | | |
+| `ADGUARD_MAX_IP_DETECTION_RETRIES` | Maximum IP detection retry attempts | `3` | Positive integer |
+| `ADGUARD_IP_DETECTION_RETRY_DELAY` | Delay in seconds between IP detection retries | `10` | Positive integer |
+| **Persistent identity** | | | |
+| `ADGUARD_PERSISTENT_IDENTITY` | Persist and reapply the container primary-interface MAC across `docker compose up/down` (auth reset keeps the file; OAuth session is still cleared) | `false` | `true` / `false` |
+| **DNS** | | | |
+| `ADGUARD_USE_CUSTOM_DNS` | Use a custom DNS server instead of the system default | `true` | `true` / `false` |
+| `ADGUARD_CUSTOM_DNS` | Custom DNS server address | `1.1.1.1` | IPv4 or hostname |
+| `ADGUARD_SET_SYSTEM_DNS` | Allow AdGuard VPN to change the system DNS configuration | `false` | `true` / `false` |
+| **Updates & telemetry** | | | |
+| `ADGUARD_AUTO_UPDATE` | Automatically update AdGuard VPN CLI on startup | `false` | `true` / `false` |
+| `ADGUARD_UPDATE_CHANNEL` | Update channel | `release` | `release` / `beta` / `dev` |
+| `ADGUARD_SEND_REPORTS` | Send crash reports to AdGuard | `false` | `true` / `false` |
+| `ADGUARD_TELEMETRY` | Send anonymous telemetry data | `false` | `true` / `false` |
+| **Logging & UI** | | | |
+| `ADGUARD_SHOW_HINTS` | Show CLI usage hints | `on` | `on` / `off` |
+| `ADGUARD_SHOW_NOTIFICATIONS` | Show desktop notifications | `on` | `on` / `off` |
+| `ADGUARD_SHOW_LOG` | Master switch for container log output (false = silent, except critical messages like OAuth URL) | `true` | `true` / `false` |
+| `ADGUARD_SHOW_LOG_LEVEL` | Container log level filter | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
+| `ADGUARD_SHOW_SUMMARY` | Show kill switch periodic summary in container logs | `true` | `true` / `false` |
+| `ADGUARD_MAX_WAIT_TIME` | Maximum wait time in seconds for the AdGuard VPN log file to appear | `60` | Positive integer |
+| **Build-time only** _(not honored at runtime)_ | | | |
+| `PUID` | User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in `ubuntu` user at 1000) | `1001` | Positive integer (build arg) |
+| `PGID` | Group ID for the container's app user | `1001` | Positive integer (build arg) |
 
 > [!IMPORTANT]
 >
-> - `ADGUARD_SOCKS5_HOST`: For non-localhost addresses, protect the proxy with a username and password. Use `0.0.0.0` to listen on all container interfaces; this is a bind address, not an address to use as the proxy destination. The default Compose file binds the host port to `127.0.0.1`; change the host-side bind address only when remote access is required, and configure authentication plus firewall rules first.
-> - `ADGUARD_USE_CUSTOM_DNS`: Set to `true` to use the DNS server specified by `ADGUARD_CUSTOM_DNS`, or `false` to skip custom DNS configuration.
-> - `ADGUARD_CUSTOM_DNS`: Set the DNS upstream server value, for example `1.1.1.1`, `8.8.8.8`, or another DNS server supported by AdGuard VPN CLI.
-> - `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`: A very short check interval is not recommended.
-> - `ADGUARD_PERSISTENT_IDENTITY`: Default `false` keeps the existing behavior — no filesystem or network changes for identity. Set to `true` to keep the container's in-namespace primary-interface effective MAC reapplied across `docker compose up/down`. Docker's per-endpoint MAC metadata (visible via `docker inspect`) may differ from the in-namespace effective MAC and is not guaranteed to be stable; see the [Verified scope](README.md#persistent-container-identity) section below. The intended effect is fewer forced re-authentications after recreation, but server-side fingerprinting may still require a re-login. When `true`, the entrypoint generates a locally administered unicast MAC on first boot, persists it under `<DATA_DIR>/identity/mac` (mode 0600 inside a 0700 directory), and reapplies it on every container start. The OAuth/CLI session is still cleared on auth reset, but the identity file is preserved so the MAC survives. The `ip` mutation uses the image's passwordless `sudo` rule; the image already includes `NET_ADMIN`, which the default `docker-compose.yml` keeps. The identity file is removed by an explicit `rm data/identity/mac` (identity rotation — may cause upstream re-authentication). The feature is **not supported** in `network_mode: host`, macvlan, Docker Desktop, or rootless Docker.
-> - `ADGUARD_VPN_STARTUP_GRACE_SECONDS`: Default 30. Set to `0` to restore the legacy immediate-check semantics. Bounded to 0-600.
-> - **Authentication Variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication as of version 1.5.10. Authentication is now done via web-based flow. These variables are kept for backward compatibility in other configuration aspects.
+> - **SOCKS bind safety**: For non-localhost `ADGUARD_SOCKS5_HOST`, set `ADGUARD_SOCKS5_USERNAME` and `ADGUARD_SOCKS5_PASSWORD` to protect the proxy. `0.0.0.0` listens on all container interfaces — it is a bind address, not a destination. Change the host-side port publishing only when remote access is required, and configure authentication plus firewall rules first.
+> - **Deprecated auth variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication since version 1.5.10. Use the web-based OAuth device code flow instead.
+> - **`ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`**: A very short check interval is not recommended.
+> - **`ADGUARD_VPN_STARTUP_GRACE_SECONDS`**: Default 30. Set to `0` to restore the legacy immediate-check semantics. Bounded to 0-600.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -396,7 +359,7 @@ docker compose up -d    # next boot regenerates
 
 ### Verified scope
 
-The guarantee covers the container's **network namespace effective MAC** as reported by `ip link show <iface>`. Docker's per-endpoint MAC metadata (`docker inspect --format '{{.NetworkSettings.MacAddress}}'`) is set at container creation and may diverge from the in-namespace effective MAC. In the verified Linux bridge environment, this divergence did not break egress or gateway ARP, but acceptance criteria should compare the in-namespace `ip link` value to `data/identity/mac` rather than `docker inspect` output.
+The guarantee covers the container's **network namespace effective MAC** (`ip link show <iface>`). Docker's per-endpoint MAC metadata (`docker inspect`) may diverge and is not part of the contract — always compare the in-namespace `ip link` value to `data/identity/mac`, not `docker inspect` output.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -524,7 +487,6 @@ Do **not** expose port `6089` to the public internet — it is an internal API a
 
 The `.dockerignore` file excludes `.env` and `.env.example` from the build context. Verify your `.dockerignore` is present if you rebuild the image, or your environment file may leak into the image layers.
 
-<!-- ACKNOWLEDGMENTS -->
 
 ## References
 
@@ -532,19 +494,8 @@ The `.dockerignore` file excludes `.env` and `.env.example` from the build conte
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-
-[contributors-shield]: https://img.shields.io/github/contributors/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
-[contributors-url]: https://github.com/supersunho/docker-adguardvpn-cli/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
 [forks-url]: https://github.com/supersunho/docker-adguardvpn-cli/network/members
 [stars-shield]: https://img.shields.io/github/stars/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
 [stars-url]: https://github.com/supersunho/docker-adguardvpn-cli/stargazers
-[issues-shield]: https://img.shields.io/github/issues/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
-[issues-url]: https://github.com/supersunho/docker-adguardvpn-cli/issues
-[license-shield]: https://img.shields.io/github/license/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
-[license-url]: https://github.com/supersunho/docker-adguardvpn-cli/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/supersunho
-[product-screenshot]: images/screenshot.png
+
