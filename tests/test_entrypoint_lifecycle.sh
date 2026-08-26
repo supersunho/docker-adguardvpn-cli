@@ -749,41 +749,50 @@ test_entrypoint_ordering_invariant() {
     local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
 
     # Resolve the line numbers of each anchor in the actual file.
-    # Use -F (fixed string) where possible to avoid regex surprises.
+    # The anchors mark TOP-LEVEL CALLS and SECTION STARTS, not function
+    # definitions, so a regression that moves a definition without moving
+    # its call site is caught.
+    #
+    # Order required: ensure_data_dir < _persistent_identity_apply_main
+    # < TUN permission setup < pre-VPN IP detection < init.sh
+    #
+    # This invariant is the fail-closed contract: when
+    # persistent_identity_apply fails, none of the network side effects
+    # (TUN chmod, IP probe, init.sh, OAuth, connect) may run.
     # The pattern strings contain $-signs that must NOT be expanded by
-    # grep, so they live in single-quoted variables (intentional
-    # SC2016 suppression).
+    # grep, so they live in single-quoted variables (intentional SC2016
+    # suppression).
     # shellcheck disable=SC2016
     local anchor_data_dir='ensure_data_dir "$DATA_DIR"'
     # shellcheck disable=SC2016
-    local anchor_apply='_persistent_identity_apply_main() {'
+    local anchor_apply='_persistent_identity_apply_main || identity_rc=$?'
     # shellcheck disable=SC2016
-    local anchor_ip='REAL_IP="ERROR"'
+    local anchor_tun='if [ -c /dev/net/tun ]; then'
+    # shellcheck disable=SC2016
+    local anchor_ip='# Pre-VPN IP detection (for kill switch)'
     # shellcheck disable=SC2016
     local anchor_init='if /opt/adguardvpn_cli/scripts/init.sh'
-    # The expected line numbers below MUST stay in sync with the production
-    # entrypoint.  If you move the helper or surrounding gate, update these
-    # numbers AND the helper_range/gate_range in the helper tests above so
-    # the regression guard actually covers the new layout.
-    local line_data_dir line_apply line_ip line_init
+    local line_data_dir line_apply line_tun line_ip line_init
     line_data_dir=$(grep -nF "$anchor_data_dir" "$entrypoint" | head -1 | cut -d: -f1)
     line_apply=$(grep -nF "$anchor_apply" "$entrypoint" | head -1 | cut -d: -f1)
+    line_tun=$(grep -nF "$anchor_tun" "$entrypoint" | head -1 | cut -d: -f1)
     line_ip=$(grep -nF "$anchor_ip" "$entrypoint" | head -1 | cut -d: -f1)
     line_init=$(grep -nF "$anchor_init" "$entrypoint" | head -1 | cut -d: -f1)
 
-    if [ -z "$line_data_dir" ] || [ -z "$line_apply" ] || [ -z "$line_ip" ] || [ -z "$line_init" ]; then
-        echo "  FAIL: could not locate ordering anchors (data_dir=${line_data_dir} apply=${line_apply} ip=${line_ip} init=${line_init})"
+    if [ -z "$line_data_dir" ] || [ -z "$line_apply" ] || [ -z "$line_tun" ] || [ -z "$line_ip" ] || [ -z "$line_init" ]; then
+        echo "  FAIL: could not locate 5 anchors (data_dir=${line_data_dir} apply=${line_apply} tun=${line_tun} ip=${line_ip} init=${line_init})"
         FAIL=$((FAIL + 1))
         return
     fi
 
     if [ "$line_data_dir" -lt "$line_apply" ] && \
-       [ "$line_apply" -lt "$line_ip" ] && \
+       [ "$line_apply" -lt "$line_tun" ] && \
+       [ "$line_tun" -lt "$line_ip" ] && \
        [ "$line_ip" -lt "$line_init" ]; then
-        echo "  PASS: ordering ensure_data_dir(${line_data_dir}) < apply(${line_apply}) < ip_detect(${line_ip}) < init.sh(${line_init})"
+        echo "  PASS: 5-anchor ordering data_dir(${line_data_dir}) < apply(${line_apply}) < tun(${line_tun}) < ip_detect(${line_ip}) < init.sh(${line_init})"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: ordering broken: data_dir=${line_data_dir} apply=${line_apply} ip=${line_ip} init=${line_init}"
+        echo "  FAIL: ordering broken: data_dir=${line_data_dir} apply=${line_apply} tun=${line_tun} ip=${line_ip} init=${line_init}"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -793,50 +802,63 @@ test_helper_failure_exits_78_without_init_marker() {
     test_dir=$(mktemp -d)
     local marker="${test_dir}/init_marker"
     local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
-    # Source the production helper and top-level gate via sed extraction.
-    # The extraction range MUST stay in sync with scripts/docker-entrypoint.sh;
-    # if the helper definition moves, this test must be updated.
-    local helper_range='186,192p'
-    local gate_range='194,199p'
+    # Source the production helper by name and the top-level gate plus the
+    # /dev/net/tun permission block via sed range.  The gate+TUN extraction
+    # starts at the `identity_rc=0` line and ends at (but does not
+    # include) the `LOG_FILE=...` assignment, so the post-fail path is
+    # the only exit.
+    local helper_range='172,178p'
     local runner="${test_dir}/run_fail.sh"
+    # Pre-process a copy of the entrypoint: replace the `[ -c /dev/net/tun ]`
+    # check with `[ -e / ]` (always true on any POSIX system) so the TUN
+    # block exercises the chmod path on a host without /dev/net/tun.  The
+    # replacement is a test-only concern; production is unchanged.
+    # Test-only copy: swap the /dev/net/tun character-device check for an
+    # always-true predicate so the TUN block exercises its chmod path on
+    # hosts without the device; production stays unchanged.
+    sed 's|\[ -c /dev/net/tun \]|[ -e / ]|' "$entrypoint" > "${test_dir}/entrypoint_copy.sh"
     cat > "$runner" << RUNNER
 #!/bin/bash
-# Source ONLY persistent_identity and log_force from the production libs,
-# then source the production helper and top-level gate by line range.  Mock
-# the two functions the gate calls so we exercise the gate's actual control
-# flow (return 78 on apply failure, exit 78, no init marker).
-set -euo pipefail
-# Stub the persistent_identity library so the source is well-defined.
+set -uo pipefail
+# Stub persistent_identity_apply so the gate exits with rc=78.
 persistent_identity_apply() { return 1; }
-# log_force is a no-op for the failure path (the helper only calls it on
-# failure, but the test verifies rc, not log content).  Provide a safe
-# stub so the runner doesn't pull in logging.sh transitively.
+# log_force and the lib log functions are no-op stubs so the runner
+# does not need the production logging.sh.
 log_force() { :; }
-# Source the production helper verbatim from the entrypoint.  Any future
-# drift between the runner and the entrypoint is a real test failure.
-sed -n '${helper_range}' "${entrypoint}" > "${test_dir}/_helper.sh"
-sed -n '${gate_range}'   "${entrypoint}" > "${test_dir}/_gate.sh"
+log() { :; }
+# chmod stub records invocations so the test can prove the TUN block
+# was not reached on identity failure.
+chmod() {
+    printf '%s\n' "\$*" >> "\${TEST_DIR}/_chmod_calls.log"
+    return 0
+}
+# Source the production helper verbatim from the entrypoint copy.
+sed -n '${helper_range}' "\${TEST_DIR}/entrypoint_copy.sh" > "\${TEST_DIR}/_helper.sh"
+# Source the production gate + TUN permission block.  This block ends
+# just before LOG_FILE= so any post-gate code (IP probe, init.sh) is
+# not sourced.  The TUN chmod must be reached only when the gate passes.
+sed -n '/^identity_rc=0$/,/^LOG_FILE=/p' "\${TEST_DIR}/entrypoint_copy.sh" | sed '/^LOG_FILE=/d' > "\${TEST_DIR}/_gate_and_tun.sh"
 # shellcheck disable=SC1091
-source "${test_dir}/_helper.sh"
+source "\${TEST_DIR}/_helper.sh"
 # shellcheck disable=SC1091
-source "${test_dir}/_gate.sh"
+source "\${TEST_DIR}/_gate_and_tun.sh"
 
 # This line must NOT execute when apply fails.
-touch "${marker}"
+touch "\${TEST_DIR}/init_marker"
 RUNNER
     chmod +x "$runner"
     local rc
     rc=0
-    if bash "$runner" >/dev/null 2>&1; then
+    if env TEST_DIR="$test_dir" bash "$runner" >/dev/null 2>&1; then
         rc=0
     else
         rc=$?
     fi
-    if [ "$rc" -eq 78 ] && [ ! -e "$marker" ]; then
-        echo "  PASS: helper failure exits 78 and skips init marker (production helper + gate sourced)"
+    if [ "$rc" -eq 78 ] && [ ! -e "$marker" ] && [ ! -s "$test_dir/_chmod_calls.log" ]; then
+        echo "  PASS: helper failure exits 78, skips init marker, and skips TUN chmod (production gate+TUN sourced)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: helper failure rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no)"
+        echo "  FAIL: helper failure rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no) chmod_calls=$([ -s "$test_dir/_chmod_calls.log" ] && cat "$test_dir/_chmod_calls.log" || echo none)"
         FAIL=$((FAIL + 1))
     fi
     rm -rf "$test_dir"
@@ -847,38 +869,46 @@ test_helper_success_returns_zero_and_reaches_init_marker() {
     test_dir=$(mktemp -d)
     local marker="${test_dir}/init_marker"
     local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
-    local helper_range='186,192p'
-    local gate_range='194,199p'
+    local helper_range='172,178p'
     local runner="${test_dir}/run_ok.sh"
+    # Test-only copy: swap the /dev/net/tun character-device check for an
+    # always-true predicate so the TUN block exercises its chmod path on
+    # hosts without the device; production stays unchanged.
+    sed 's|\[ -c /dev/net/tun \]|[ -e / ]|' "$entrypoint" > "${test_dir}/entrypoint_copy.sh"
     cat > "$runner" << RUNNER
 #!/bin/bash
-set -euo pipefail
-# Mock apply succeeds; log_force is a safe no-op.
+set -uo pipefail
+# Mock apply succeeds.
 persistent_identity_apply() { return 0; }
 log_force() { :; }
-sed -n '${helper_range}' "${entrypoint}" > "${test_dir}/_helper.sh"
-sed -n '${gate_range}'   "${entrypoint}" > "${test_dir}/_gate.sh"
+log() { :; }
+chmod() {
+    printf '%s\n' "\$*" >> "\${TEST_DIR}/_chmod_calls.log"
+    return 0
+}
+sed -n '${helper_range}' "\${TEST_DIR}/entrypoint_copy.sh" > "\${TEST_DIR}/_helper.sh"
+sed -n '/^identity_rc=0$/,/^LOG_FILE=/p' "\${TEST_DIR}/entrypoint_copy.sh" | sed '/^LOG_FILE=/d' > "\${TEST_DIR}/_gate_and_tun.sh"
 # shellcheck disable=SC1091
-source "${test_dir}/_helper.sh"
+source "\${TEST_DIR}/_helper.sh"
 # shellcheck disable=SC1091
-source "${test_dir}/_gate.sh"
+source "\${TEST_DIR}/_gate_and_tun.sh"
 
-# This line must execute when apply succeeds.
-touch "${marker}"
+# This line must execute when apply succeeds and the TUN block runs.
+touch "\${TEST_DIR}/init_marker"
 RUNNER
     chmod +x "$runner"
     local rc
     rc=0
-    if bash "$runner" >/dev/null 2>&1; then
+    if env TEST_DIR="$test_dir" bash "$runner" >/dev/null 2>&1; then
         rc=0
     else
         rc=$?
     fi
-    if [ "$rc" -eq 0 ] && [ -e "$marker" ]; then
-        echo "  PASS: helper success rc=0 and reaches init marker (production helper + gate sourced)"
+    if [ "$rc" -eq 0 ] && [ -e "$marker" ] && [ -s "$test_dir/_chmod_calls.log" ]; then
+        echo "  PASS: helper success rc=0, reaches init marker, and runs TUN chmod (production gate+TUN sourced)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: helper success rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no)"
+        echo "  FAIL: helper success rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no) chmod_calls=$([ -s "$test_dir/_chmod_calls.log" ] && cat "$test_dir/_chmod_calls.log" || echo none)"
         FAIL=$((FAIL + 1))
     fi
     rm -rf "$test_dir"

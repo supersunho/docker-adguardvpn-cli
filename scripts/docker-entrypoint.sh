@@ -134,20 +134,6 @@ log INFO "AdGuard VPN Container Starting"
 log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
 log INFO "Connection mode: ${ADGUARD_CONNECTION_TYPE}"
 
-# =============================================================================
-# Permission Setup
-# =============================================================================
-
-if [ -c /dev/net/tun ]; then
-    if chmod 666 /dev/net/tun 2>/dev/null; then
-        log DEBUG "/dev/net/tun permissions set to 666"
-    else
-        log INFO "/dev/net/tun already accessible"
-    fi
-else
-    log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
-fi
-
 ensure_data_dir() {
     local data_dir="$1"
 
@@ -197,6 +183,25 @@ if [ "${identity_rc}" -ne 0 ]; then
     exit "${identity_rc}"
 fi
 unset identity_rc
+
+# =============================================================================
+# Permission Setup
+#
+# Moved here so persistent_identity_apply (above) can fail closed at
+# exit 78 BEFORE any /dev/net/tun mode change.  When the opt-in identity
+# fails, neither this block nor any subsequent step (IP detection,
+# init.sh, OAuth/config/connect) runs.
+# =============================================================================
+
+if [ -c /dev/net/tun ]; then
+    if chmod 666 /dev/net/tun 2>/dev/null; then
+        log DEBUG "/dev/net/tun permissions set to 666"
+    else
+        log INFO "/dev/net/tun already accessible"
+    fi
+else
+    log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
+fi
 
 LOG_FILE="${DATA_DIR}/app.log"
 
