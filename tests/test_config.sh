@@ -91,6 +91,102 @@ test_normalize_canonicalizes_values() {
         "SOCKS" "${ADGUARD_CONNECTION_TYPE}"
 }
 
+# =============================================================================
+# Persistent identity (opt-in) — config-level defaults and validation
+# =============================================================================
+
+test_persistent_identity_default_is_false() {
+    unset ADGUARD_PERSISTENT_IDENTITY
+
+    config_export_defaults
+
+    assertEquals "ADGUARD_PERSISTENT_IDENTITY default should be false" \
+        "false" "${ADGUARD_PERSISTENT_IDENTITY}"
+}
+
+test_persistent_identity_normalize_case_insensitive() {
+    export ADGUARD_PERSISTENT_IDENTITY="True"
+    config_normalize
+    assertEquals "True normalizes to true" \
+        "true" "${ADGUARD_PERSISTENT_IDENTITY}"
+
+    export ADGUARD_PERSISTENT_IDENTITY="FALSE"
+    config_normalize
+    assertEquals "FALSE normalizes to false" \
+        "false" "${ADGUARD_PERSISTENT_IDENTITY}"
+}
+
+test_persistent_identity_invalid_value_rejected() {
+    export ADGUARD_PERSISTENT_IDENTITY="yes"
+    if config_validate; then
+        assertTrue "ADGUARD_PERSISTENT_IDENTITY=yes must fail validation" false
+    else
+        assertTrue "ADGUARD_PERSISTENT_IDENTITY=yes rejected" true
+    fi
+    unset ADGUARD_PERSISTENT_IDENTITY
+}
+
+# =============================================================================
+# ADGUARD_VPN_STARTUP_GRACE_SECONDS — bounded_int validation
+# =============================================================================
+
+test_startup_grace_default_is_30() {
+    unset ADGUARD_VPN_STARTUP_GRACE_SECONDS
+    config_export_defaults
+    assertEquals "grace default should be 30" \
+        "30" "${ADGUARD_VPN_STARTUP_GRACE_SECONDS}"
+}
+
+test_startup_grace_boundaries_accepted() {
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS=0
+    if config_validate; then
+        assertTrue "0 should be valid" true
+    else
+        assertTrue "0 should be valid" false
+    fi
+
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS=600
+    if config_validate; then
+        assertTrue "600 should be valid" true
+    else
+        assertTrue "600 should be valid" false
+    fi
+
+    unset ADGUARD_VPN_STARTUP_GRACE_SECONDS
+}
+
+test_startup_grace_rejects_out_of_range() {
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS=-1
+    if config_validate; then
+        assertTrue "-1 must fail" false
+    else
+        assertTrue "-1 rejected" true
+    fi
+
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS=601
+    if config_validate; then
+        assertTrue "601 must fail" false
+    else
+        assertTrue "601 rejected" true
+    fi
+
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS=abc
+    if config_validate; then
+        assertTrue "non-integer must fail" false
+    else
+        assertTrue "non-integer rejected" true
+    fi
+
+    export ADGUARD_VPN_STARTUP_GRACE_SECONDS="3.14"
+    if config_validate; then
+        assertTrue "fractional must fail" false
+    else
+        assertTrue "fractional rejected" true
+    fi
+
+    unset ADGUARD_VPN_STARTUP_GRACE_SECONDS
+}
+
 SHUNIT2="${SCRIPT_DIR}/lib/shunit2"
 if [ ! -f "$SHUNIT2" ]; then
     mkdir -p "${SCRIPT_DIR}/lib"

@@ -541,6 +541,366 @@ echo ""
 test_data_directory_guard_fails_fast
 echo ""
 
+# =============================================================================
+# Grace boundary deterministic tests (A)
+#
+# Run the actual supervise_vpn() with a stubbed `sleep` that records its
+# arguments and immediately returns.  Each case verifies both the per-tick
+# sequence and the running total matches the configured grace window.
+# =============================================================================
+
+# Stub sleep that records its first argument to a log file and returns
+# immediately.  Background form (sleep N &) is preserved by also returning
+# 0 promptly so `wait "$!"` reaps the child without blocking.
+# Only integer-argument calls are recorded so that the runner's own
+# `sleep 0.1` plumbing call (which the stub PATH would otherwise catch)
+# does not contaminate the recorded sequence.
+RECORD_SLEEP_LOG=""
+record_sleep_setup() {
+    local stub_dir="$1"
+    RECORD_SLEEP_LOG="${stub_dir}/sleep.log"
+    : > "$RECORD_SLEEP_LOG"
+    cat > "${stub_dir}/sleep" << STUB
+#!/bin/bash
+ARG="\${1:-0}"
+if [[ "\$ARG" =~ ^[0-9]+\$ ]]; then
+    printf '%s\n' "\$ARG" >> "${RECORD_SLEEP_LOG}"
+fi
+exit 0
+STUB
+    chmod +x "${stub_dir}/sleep"
+}
+
+# Write the grace recorder runner for a given grace value.  The runner
+# shadows `sleep` via PATH so each call from supervise_vpn is recorded.
+# Plumbing sleeps in the runner itself use /bin/sleep to avoid the shadow.
+write_grace_runner() {
+    local test_dir="$1"
+    local grace_value="$2"
+    local runner="${test_dir}/run_grace.sh"
+    local project_dir="$PROJECT_DIR"
+    cat > "$runner" << RUNNER
+#!/bin/bash
+set -uo pipefail
+hash -r
+export PATH="${test_dir}:\${PATH}"
+export HOME="${test_dir}/home"
+export ADGUARD_SHOW_LOG=false
+export ADGUARD_USE_KILL_SWITCH=false
+export ADGUARD_VPN_STARTUP_GRACE_SECONDS="${grace_value}"
+source "${project_dir}/scripts/lib/logging.sh"
+source "${project_dir}/scripts/lib/vpn_status.sh"
+source <(sed -n '/^supervise_vpn() {/,/^}/p' "${project_dir}/scripts/docker-entrypoint.sh")
+check_adguard_vpn_status() { return 1; }
+supervise_vpn &
+SV_PID=\$!
+# Wait at least grace_value seconds so the recorded sleep sequence
+# completes.  The supervisor runs for the full grace period when status
+# keeps failing, so a shorter wait truncates the recorded log.
+/bin/sleep "${grace_value}"
+# A small additional wait lets the backgrounded stub sleep finish its
+# write to the log before we tear the supervisor down.
+/bin/sleep 0.5
+kill "\${SV_PID}" 2>/dev/null || true
+wait "\${SV_PID}" 2>/dev/null || true
+echo "GRACE_LOG_START"
+cat "${test_dir}/sleep.log" 2>/dev/null || true
+echo "GRACE_LOG_END"
+RUNNER
+    chmod +x "$runner"
+}
+
+# Run supervise_vpn with stubbed sleep + always-failing status, then return
+# the contents of the sleep log on stdout (between GRACE_LOG_START/END markers).
+# The runner uses PATH-based sleep shadowing; the runner's own plumbing uses
+# /bin/sleep to bypass that shadow.
+run_grace_recorder() {
+    local test_dir="$1"
+    local grace_value="$2"
+    write_grace_runner "$test_dir" "$grace_value"
+    local runner="${test_dir}/run_grace.sh"
+    local raw
+    raw=$(bash "$runner" 2>/dev/null || true)
+    # Extract only the segment between markers so any stray output is excluded.
+    local between
+    between=$(printf '%s' "$raw" | sed -n '/^GRACE_LOG_START$/,/^GRACE_LOG_END$/p' | sed '1d;$d')
+    printf '%s' "$between"
+}
+
+assert_grace_sequence() {
+    local label="$1"
+    local expected="$2"
+    local actual="$3"
+    if [ "$expected" = "$actual" ]; then
+        echo "  PASS: ${label} — sleeps=${actual}"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: ${label} — expected=${expected} actual=${actual}"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+test_grace_0_emits_no_sleeps() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    record_sleep_setup "$test_dir"
+    local actual
+    actual=$(run_grace_recorder "$test_dir" 0 | tr '\n' ',' | sed 's/,$//')
+    assert_grace_sequence "grace=0 emits no sleep calls" "" "$actual"
+    rm -rf "$test_dir"
+}
+
+test_grace_1_emits_one_sleep_of_one_second() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    record_sleep_setup "$test_dir"
+    local actual
+    actual=$(run_grace_recorder "$test_dir" 1 | tr '\n' ',' | sed 's/,$//')
+    assert_grace_sequence "grace=1 emits one 1s sleep" "1" "$actual"
+    rm -rf "$test_dir"
+}
+
+test_grace_6_emits_sleeps_five_then_one() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    record_sleep_setup "$test_dir"
+    local actual
+    actual=$(run_grace_recorder "$test_dir" 6 | tr '\n' ',' | sed 's/,$//')
+    assert_grace_sequence "grace=6 emits 5s then 1s" "5,1" "$actual"
+    rm -rf "$test_dir"
+}
+
+test_grace_30_emits_six_five_second_sleeps() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    record_sleep_setup "$test_dir"
+    local actual
+    actual=$(run_grace_recorder "$test_dir" 30 | tr '\n' ',' | sed 's/,$//')
+    assert_grace_sequence "grace=30 emits six 5s sleeps" "5,5,5,5,5,5" "$actual"
+    rm -rf "$test_dir"
+}
+
+test_grace_600_emits_one_twenty_five_second_sleeps() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    record_sleep_setup "$test_dir"
+    # 600 / 5 = 120 ticks.  The stub sleep returns immediately, so the
+    # grace loop iterates all 120 ticks in milliseconds (sum = 600).
+    # We verify the cap-at-5 invariant exactly: every recorded sleep is
+    # exactly 5, count == 120, sum == 600, cap_violation == 0.  Any of
+    # these being off means the remainder/accumulation fix has regressed.
+    local runner="${test_dir}/run_grace_600.sh"
+    cat > "$runner" << RUNNER
+#!/bin/bash
+set -uo pipefail
+hash -r
+export PATH="${test_dir}:\${PATH}"
+export HOME="${test_dir}/home"
+export ADGUARD_SHOW_LOG=false
+export ADGUARD_USE_KILL_SWITCH=false
+export ADGUARD_VPN_STARTUP_GRACE_SECONDS=600
+
+source "${PROJECT_DIR}/scripts/lib/logging.sh"
+source "${PROJECT_DIR}/scripts/lib/vpn_status.sh"
+source <(sed -n '/^supervise_vpn() {/,/^}/p' "${PROJECT_DIR}/scripts/docker-entrypoint.sh")
+
+check_adguard_vpn_status() { return 1; }
+
+supervise_vpn &
+SV_PID=\$!
+# The stub sleep returns instantly, so 120 ticks finish in milliseconds.
+# Give the loop a generous 2-second ceiling so scheduler jitter cannot
+# truncate the recorded log.
+/bin/sleep 2
+kill "\${SV_PID}" 2>/dev/null || true
+wait "\${SV_PID}" 2>/dev/null || true
+
+# Count and sum the recorded sleep durations.
+awk 'BEGIN{s=0;n=0;cap_violation=0} {s+=\$1; n++; if (\$1 != 5) cap_violation++} END{printf "count=%d sum=%d cap_violation=%d\n", n, s, cap_violation}' "${test_dir}/sleep.log"
+RUNNER
+    chmod +x "$runner"
+    local actual
+    actual=$(bash "$runner" 2>&1 | grep -E '^count=' || echo "count=0 sum=0 cap_violation=0")
+    local count sum cap_violation
+    count=$(echo "$actual" | sed -n 's/^count=\([0-9]*\).*/\1/p')
+    sum=$(echo "$actual" | sed -n 's/.*sum=\([0-9]*\).*/\1/p')
+    cap_violation=$(echo "$actual" | sed -n 's/.*cap_violation=\([0-9]*\)$/\1/p')
+    # Exact assertion.  A regression that drops a tick, exceeds 5, or
+    # fails to reach the full grace must fail this test.
+    if [ "${count}" -eq 120 ] && [ "${sum}" -eq 600 ] && [ "${cap_violation}" -eq 0 ]; then
+        echo "  PASS: grace=600 exactly 120 ticks of 5s each (sum=600 cap_violation=0)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: grace=600 expected count=120 sum=600 cap_violation=0, got ${actual}"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$test_dir"
+}
+
+# =============================================================================
+# Entrypoint test seam + ordering tests (E)
+#
+# Source the entrypoint's _persistent_identity_apply_main helper and the
+# surrounding top-level gate, then verify ordering, fail-closed rc=78, and
+# success rc=0 with init marker behavior.
+# =============================================================================
+
+test_entrypoint_ordering_invariant() {
+    local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
+
+    # Resolve the line numbers of each anchor in the actual file.
+    # Use -F (fixed string) where possible to avoid regex surprises.
+    # The pattern strings contain $-signs that must NOT be expanded by
+    # grep, so they live in single-quoted variables (intentional
+    # SC2016 suppression).
+    # shellcheck disable=SC2016
+    local anchor_data_dir='ensure_data_dir "$DATA_DIR"'
+    # shellcheck disable=SC2016
+    local anchor_apply='_persistent_identity_apply_main() {'
+    # shellcheck disable=SC2016
+    local anchor_ip='REAL_IP="ERROR"'
+    # shellcheck disable=SC2016
+    local anchor_init='if /opt/adguardvpn_cli/scripts/init.sh'
+    # The expected line numbers below MUST stay in sync with the production
+    # entrypoint.  If you move the helper or surrounding gate, update these
+    # numbers AND the helper_range/gate_range in the helper tests above so
+    # the regression guard actually covers the new layout.
+    local line_data_dir line_apply line_ip line_init
+    line_data_dir=$(grep -nF "$anchor_data_dir" "$entrypoint" | head -1 | cut -d: -f1)
+    line_apply=$(grep -nF "$anchor_apply" "$entrypoint" | head -1 | cut -d: -f1)
+    line_ip=$(grep -nF "$anchor_ip" "$entrypoint" | head -1 | cut -d: -f1)
+    line_init=$(grep -nF "$anchor_init" "$entrypoint" | head -1 | cut -d: -f1)
+
+    if [ -z "$line_data_dir" ] || [ -z "$line_apply" ] || [ -z "$line_ip" ] || [ -z "$line_init" ]; then
+        echo "  FAIL: could not locate ordering anchors (data_dir=${line_data_dir} apply=${line_apply} ip=${line_ip} init=${line_init})"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    if [ "$line_data_dir" -lt "$line_apply" ] && \
+       [ "$line_apply" -lt "$line_ip" ] && \
+       [ "$line_ip" -lt "$line_init" ]; then
+        echo "  PASS: ordering ensure_data_dir(${line_data_dir}) < apply(${line_apply}) < ip_detect(${line_ip}) < init.sh(${line_init})"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: ordering broken: data_dir=${line_data_dir} apply=${line_apply} ip=${line_ip} init=${line_init}"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+test_helper_failure_exits_78_without_init_marker() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    local marker="${test_dir}/init_marker"
+    local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
+    # Source the production helper and top-level gate via sed extraction.
+    # The extraction range MUST stay in sync with scripts/docker-entrypoint.sh;
+    # if the helper definition moves, this test must be updated.
+    local helper_range='186,192p'
+    local gate_range='194,199p'
+    local runner="${test_dir}/run_fail.sh"
+    cat > "$runner" << RUNNER
+#!/bin/bash
+# Source ONLY persistent_identity and log_force from the production libs,
+# then source the production helper and top-level gate by line range.  Mock
+# the two functions the gate calls so we exercise the gate's actual control
+# flow (return 78 on apply failure, exit 78, no init marker).
+set -euo pipefail
+# Stub the persistent_identity library so the source is well-defined.
+persistent_identity_apply() { return 1; }
+# log_force is a no-op for the failure path (the helper only calls it on
+# failure, but the test verifies rc, not log content).  Provide a safe
+# stub so the runner doesn't pull in logging.sh transitively.
+log_force() { :; }
+# Source the production helper verbatim from the entrypoint.  Any future
+# drift between the runner and the entrypoint is a real test failure.
+sed -n '${helper_range}' "${entrypoint}" > "${test_dir}/_helper.sh"
+sed -n '${gate_range}'   "${entrypoint}" > "${test_dir}/_gate.sh"
+# shellcheck disable=SC1091
+source "${test_dir}/_helper.sh"
+# shellcheck disable=SC1091
+source "${test_dir}/_gate.sh"
+
+# This line must NOT execute when apply fails.
+touch "${marker}"
+RUNNER
+    chmod +x "$runner"
+    local rc
+    rc=0
+    if bash "$runner" >/dev/null 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
+    if [ "$rc" -eq 78 ] && [ ! -e "$marker" ]; then
+        echo "  PASS: helper failure exits 78 and skips init marker (production helper + gate sourced)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: helper failure rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no)"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$test_dir"
+}
+
+test_helper_success_returns_zero_and_reaches_init_marker() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    local marker="${test_dir}/init_marker"
+    local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
+    local helper_range='186,192p'
+    local gate_range='194,199p'
+    local runner="${test_dir}/run_ok.sh"
+    cat > "$runner" << RUNNER
+#!/bin/bash
+set -euo pipefail
+# Mock apply succeeds; log_force is a safe no-op.
+persistent_identity_apply() { return 0; }
+log_force() { :; }
+sed -n '${helper_range}' "${entrypoint}" > "${test_dir}/_helper.sh"
+sed -n '${gate_range}'   "${entrypoint}" > "${test_dir}/_gate.sh"
+# shellcheck disable=SC1091
+source "${test_dir}/_helper.sh"
+# shellcheck disable=SC1091
+source "${test_dir}/_gate.sh"
+
+# This line must execute when apply succeeds.
+touch "${marker}"
+RUNNER
+    chmod +x "$runner"
+    local rc
+    rc=0
+    if bash "$runner" >/dev/null 2>&1; then
+        rc=0
+    else
+        rc=$?
+    fi
+    if [ "$rc" -eq 0 ] && [ -e "$marker" ]; then
+        echo "  PASS: helper success rc=0 and reaches init marker (production helper + gate sourced)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: helper success rc=${rc} marker_present=$([ -e "$marker" ] && echo yes || echo no)"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$test_dir"
+}
+
+test_grace_0_emits_no_sleeps
+echo ""
+test_grace_1_emits_one_sleep_of_one_second
+echo ""
+test_grace_6_emits_sleeps_five_then_one
+echo ""
+test_grace_30_emits_six_five_second_sleeps
+echo ""
+test_grace_600_emits_one_twenty_five_second_sleeps
+echo ""
+test_entrypoint_ordering_invariant
+echo ""
+test_helper_failure_exits_78_without_init_marker
+echo ""
+test_helper_success_returns_zero_and_reaches_init_marker
+echo ""
+
 echo "=========================================="
 echo " Results: ${PASS} passed, ${FAIL} failed"
 echo "=========================================="
