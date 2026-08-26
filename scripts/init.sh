@@ -58,12 +58,45 @@ _reset_auth_data() {
         return 1
     fi
 
+    # When the opt-in persistent identity is enabled, preserve the
+    # DATA_DIR/identity subtree (mode 0700/0600) so the container keeps
+    # its MAC identity across auth resets.  Browser re-authentication is
+    # still required because OAuth/CLI session data is removed below.
+    local identity_preserved=false
+    if [ "${ADGUARD_PERSISTENT_IDENTITY:-false}" = "true" ] && \
+       [ -e "${DATA_DIR}/identity" ]; then
+        local identity_stash
+        identity_stash="$(mktemp -d)" || identity_stash=""
+        if [ -n "$identity_stash" ] && \
+           mv "${DATA_DIR}/identity" "${identity_stash}/identity"; then
+            identity_preserved=true
+        else
+            log_force WARN "Could not stash persistent identity for preservation; reset will remove it"
+            [ -n "$identity_stash" ] && rm -rf "$identity_stash"
+        fi
+    fi
+
     if ! find "$DATA_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; then
         log_force ERROR "Could not reset authentication data in ${DATA_DIR}"
+        # Best-effort restore of stashed identity before bailing out.
+        if [ "$identity_preserved" = true ] && [ -n "${identity_stash:-}" ]; then
+            mv "${identity_stash}/identity" "${DATA_DIR}/identity" 2>/dev/null || true
+            rm -rf "$identity_stash" 2>/dev/null || true
+        fi
         return 1
     fi
 
-    log_force WARN "Authentication data reset. A new browser authentication is required."
+    if [ "$identity_preserved" = true ] && [ -n "${identity_stash:-}" ]; then
+        if ! mv "${identity_stash}/identity" "${DATA_DIR}/identity"; then
+            log_force ERROR "Could not restore persistent identity after reset"
+            rm -rf "$identity_stash" 2>/dev/null || true
+            return 1
+        fi
+        rm -rf "$identity_stash" 2>/dev/null || true
+        log_force WARN "Authentication data reset; persistent identity preserved. Browser authentication is still required."
+    else
+        log_force WARN "Authentication data reset. A new browser authentication is required."
+    fi
     return 0
 }
 

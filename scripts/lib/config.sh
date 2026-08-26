@@ -16,10 +16,10 @@
 # =============================================================================
 #
 # _CONFIG_KEYS ordered list of key names
-# _CONFIG_TYPE[key]       type: bool|port|positive_int|ip|dns|enum|string
+# _CONFIG_TYPE[key]       type: bool|port|positive_int|bounded_int|non_negative_int|ip|dns|enum|string
 # _CONFIG_DEFAULT[key]    default value
 # _CONFIG_DESC[key]       human-readable description
-# _CONFIG_ENUM[key]       comma-separated valid values (for type=enum)
+# _CONFIG_ENUM[key]       comma-separated valid values (for type=enum) or "lo,hi" for type=bounded_int
 #
 # =============================================================================
 
@@ -43,6 +43,10 @@ _config_define_schema() {
     _config_add "ADGUARD_AUTH_TIMEOUT" \
         "positive_int" "900" \
         "Device-code OAuth timeout in seconds"
+
+    _config_add "ADGUARD_PERSISTENT_IDENTITY" \
+        "bool" "false" \
+        "Persist and reapply the container primary-interface MAC before VPN startup"
 
     # ---------- SOCKS proxy ----------
     # NOTE: Defaults are intentionally empty to force explicit user configuration.
@@ -167,6 +171,11 @@ _config_define_schema() {
     _config_add "ADGUARD_MAX_WAIT_TIME" \
         "positive_int" "60" \
         "Maximum wait time in seconds for the AdGuard VPN log file to appear"
+
+    _config_add "ADGUARD_VPN_STARTUP_GRACE_SECONDS" \
+        "bounded_int" "30" \
+        "Seconds to allow the VPN tunnel to establish before the status supervisor treats a not-connected check as failure" \
+        "0,600"
 }
 
 # ---- Internal helpers -------------------------------------------------------
@@ -274,6 +283,14 @@ config_validate() {
             positive_int)
                 if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt 1 ]; then
                     log ERROR "${key}: must be a positive integer (got '${val}')"
+                    err=1
+                fi
+                ;;
+            bounded_int)
+                local lo hi
+                IFS=, read -r lo hi <<< "${_CONFIG_ENUM[$key]:-,}"
+                if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt "$lo" ] || [ "$val" -gt "$hi" ]; then
+                    log ERROR "${key}: must be an integer in ${lo}-${hi} (got '${val}')"
                     err=1
                 fi
                 ;;

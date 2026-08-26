@@ -19,10 +19,14 @@ _LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
 # error_handling.sh should be early since it provides die/try/retry.
 # config.sh must come before killswitch_detector.sh because the
 # detector snapshots config values at source time.
+# persistent_identity.sh is sourced unconditionally when present so its
+# functions are always available to PID1, but the apply logic is opt-in via
+# ADGUARD_PERSISTENT_IDENTITY.
 for _module in \
     logging.sh \
     error_handling.sh \
     config.sh \
+    persistent_identity.sh \
     network.sh \
     ip_detection.sh \
     vpn_status.sh \
