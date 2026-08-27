@@ -708,12 +708,70 @@ jobs:
               id: release-notes
               run: |
                   CURRENT_TAG="${{ needs.prepare.outputs.release_tag }}"
-                  PREV_TAG=$(git tag --merged HEAD --sort=-v:refname | awk -v current_tag="$CURRENT_TAG" '$0 != current_tag { print; exit }')
+                  BUILD_VERSION_BASE="${{ needs.prepare.outputs.build_version_base }}"
+                  PRERELEASE_FLAG="${{ needs.prepare.outputs.prerelease }}"
+
+                  # ---------------------------------------------------------------------------
+                  # Resolve PREV_TAG with tiered fallback:
+                  #   Tier 1 (prerelease only): same MAJOR.MINOR.PATCH base, reachable from HEAD.
+                  #     - 2.1.0-beta.2 -> 2.1.0-beta.1
+                  #     - 2.1.0-rc.1   -> 2.1.0-beta.3
+                  #     Skipped for stable releases so a 2.1.0 stable build does NOT diff
+                  #     against 2.1.0-beta.3 only — it falls through to Tier 2 and picks up
+                  #     the previous stable (2.0.0), giving the full beta cycle in notes.
+                  #   Tier 2 (always): any reachable tag with version strictly lower than
+                  #     current AND different base. Picks the previous stable for the first
+                  #     prerelease of a line (2.1.0-beta.1 -> 2.0.0) and the previous stable
+                  #     for a stable release (2.1.0 -> 2.0.0).
+                  #   Tier 3: no reachable tag -> initial commit.
+                  # ---------------------------------------------------------------------------
+                  # NOTE: do not use `git tag --merged HEAD` here. It only returns tags that
+                  # are *ancestors* of HEAD; if the build runs on a beta branch whose beta
+                  # tags were never merged into main, those tags are invisible. Enumerate all
+                  # tags and filter by ancestry using `git merge-base --is-ancestor`.
+                  mapfile -t ALL_TAGS < <(git tag --sort=-v:refname)
+
+                  PREV_TAG=""
+
+                  # Tier 1: same MAJOR.MINOR.PATCH base, reachable from HEAD.
+                  # Only active for prerelease builds; stable builds skip this tier so their
+                  # changelog covers the entire prerelease cycle against the last stable.
+                  if [ "$PRERELEASE_FLAG" = "true" ]; then
+                    for tag in "${ALL_TAGS[@]}"; do
+                      [ "$tag" = "$CURRENT_TAG" ] && continue
+                      tag_clean="${tag#v}"
+                      tag_base="${tag_clean%%-*}"
+                      [ "$tag_base" = "$BUILD_VERSION_BASE" ] || continue
+                      if git merge-base --is-ancestor "$tag" HEAD 2>/dev/null; then
+                        PREV_TAG="$tag"
+                        break
+                      fi
+                    done
+                  fi
+
+                  # Tier 2: any reachable tag with version strictly lower than current.
+                  # Crucially, skip tags sharing the current base — those are handled by
+                  # Tier 1 (for prereleases) or should never be selected (for stable). For
+                  # a 2.1.0 stable build, this excludes 2.1.0-beta.* so v2.0.0 is picked.
+                  if [ -z "$PREV_TAG" ]; then
+                    for tag in "${ALL_TAGS[@]}"; do
+                      [ "$tag" = "$CURRENT_TAG" ] && continue
+                      tag_clean="${tag#v}"
+                      tag_base="${tag_clean%%-*}"
+                      [ "$tag_base" != "$BUILD_VERSION_BASE" ] || continue
+                      git merge-base --is-ancestor "$tag" HEAD 2>/dev/null || continue
+                      lowest=$(printf '%s\n%s\n' "$tag" "$CURRENT_TAG" | sort -V | head -n1)
+                      [ "$lowest" = "$tag" ] || continue
+                      PREV_TAG="$tag"
+                      break
+                    done
+                  fi
+
                   if [ -z "$PREV_TAG" ]; then
                     echo "🔍 No previous tag found, using initial commit"
                     PREV_TAG=$(git rev-list --max-parents=0 HEAD)
                   else
-                    echo "🔍 Previous tag found: $PREV_TAG"
+                    echo "🔍 Previous tag found: $PREV_TAG (current: $CURRENT_TAG, base: $BUILD_VERSION_BASE, prerelease=$PRERELEASE_FLAG)"
                   fi
 
                   FEATURES=""
@@ -783,6 +841,10 @@ jobs:
                   [ -n "$CHORES" ] && RELEASE_NOTES="${RELEASE_NOTES}
                   ### 📦 Chores
                   ${CHORES}
+                  "
+                  [ -n "$OTHERS" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 🔩 Other Changes
+                  ${OTHERS}
                   "
 
                   echo -e "$RELEASE_NOTES" > release-notes.txt
