@@ -45,7 +45,7 @@ docker-entrypoint.sh
 
 Key data flows:
 
-- **Auth**: Device-code OAuth URL → user browser → session token persisted in `data/` volume → reused on restart.
+- **Auth**: Device-code OAuth URL → user browser → session data persisted in the mounted data storage → reused on restart.
 - **Kill switch**: Records real IP before VPN → checks current IP every 8s → if leak detected, increments counter → terminates container at tolerance threshold.
 - **SOCKS mode**: `adguardvpn-cli` runs in SOCKS5 mode (port 1080), while IP detection and healthcheck still operate through the tunnel.
 - **TUN mode**: `adguardvpn-cli` creates a TUN interface with NET_ADMIN; all container traffic is routed through it.
@@ -54,11 +54,7 @@ Key data flows:
 
 ## Getting Started
 
-Before proceeding, please review the following content and create your .env file accordingly. You can refer to the .env.example file provided in this repository for guidance.
-
-### Data Directory Ownership
-
-The container runs as a non-root user with UID/GID `1001:1001`. Before first run, ensure the local `data` directory has the correct ownership:
+The repository's default `docker-compose.yml` uses a bind mount from `./data` on the host to `/home/appuser/.local/share/adguardvpn-cli` in the container. Because the published image runs as UID/GID `1001:1001`, prepare that host directory before the first start:
 
 ```bash
 mkdir -p data
@@ -70,36 +66,58 @@ docker compose up -d
 > [!IMPORTANT]
 > The published Docker image uses a fixed UID/GID of `1001:1001` for the `appuser`. Changing `PUID` and `PGID` in `.env` does **not** remap the runtime user. These are build-time arguments only — use them only when building a custom image. If the `data` directory is not writable, the container will exit immediately with a `chown` hint.
 
+### Persistence Options
+
+Authentication state, IP detection state, and the optional persistent identity are all stored at `/home/appuser/.local/share/adguardvpn-cli` inside the container. Choose one persistence method and keep it mounted across container recreation:
+
+| Method | Compose mapping | Host setup | Best for |
+| --- | --- | --- | --- |
+| Bind mount (repository default) | `./data:/home/appuser/.local/share/adguardvpn-cli` | Create `./data` and set ownership to `1001:1001` | Direct host access, backup, and inspection |
+| Docker named volume | `adguard-auth:/home/appuser/.local/share/adguardvpn-cli` | No host directory or manual `chown` normally required | Docker-managed storage and a shorter initial setup |
+
+To use a named volume instead of the default bind mount, replace the service's `volumes` entry and declare the volume at the end of the Compose file:
+
+```yaml
+services:
+    adguard-vpn-cli:
+        volumes:
+            - adguard-auth:/home/appuser/.local/share/adguardvpn-cli
+
+volumes:
+    adguard-auth:
+```
+
+With this alternative, the first-start commands are simply:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+> [!NOTE]
+> `docker compose down -v` deletes named volumes declared by the Compose project. It does not delete the host files in a bind-mounted `./data` directory.
+
 ### Authentication Setup
 
 > [!IMPORTANT]
-> **New Authentication Process**: AdGuard VPN CLI now uses web-based authentication (OAuth device code flow). You need to perform an initial authentication via browser before the VPN can connect.
+> AdGuard VPN CLI uses web-based authentication (OAuth device code flow). You need to perform an initial authentication via browser before the VPN can connect.
 
 1. **First-time Setup**:
     - Start the main container: `docker compose up -d`
     - Check the logs to find the authentication link: `docker logs adguard-vpn-cli`
     - The log will display a message like:
         ```
-        You need to authorize in your browser. The following link will be available for 1799 seconds:
-        https://auth.adguard.io/device_code?user_code=XXXX-XXXX
+        OPEN THIS LINK IN YOUR BROWSER:
+            https://auth.adguard.io/device_code?user_code=XXXX-XXXX
+            Enter the code above to authenticate: XXXX-XXXX
         ```
     - Open the link in your browser and complete authentication
     - Wait a moment for the process to continue automatically
     - **Note**: If Two-Factor Authentication (2FA) is enabled on your account, you may experience issues with this login process.
 
-2. **Persist Authentication**: Mount a bind directory or Docker volume at `/home/appuser/.local/share/adguardvpn-cli/` so the OAuth session survives container recreation. For example:
+2. **Persist Authentication**: Keep either the default bind mount or the named-volume alternative from [Persistence Options](#persistence-options). Do not switch or remove the mounted storage unless you intend to authenticate again.
 
-    ```yaml
-    services:
-        adguard-vpn-cli:
-            volumes:
-                - adguard-auth:/home/appuser/.local/share/adguardvpn-cli
-
-    volumes:
-        adguard-auth:
-    ```
-
-3. **Subsequent Starts**: After the first browser authentication, restarting or recreating the container with the same volume reuses the existing session and does not require another login. Do not run `docker compose down -v` unless you want to delete the saved authentication data. Authentication may still be required if the session expires, is revoked, or the volume is removed.
+3. **Subsequent Starts**: After the first browser authentication, restarting or recreating the container with the same mounted storage reuses the existing session and does not require another login. Authentication may still be required if the session expires, is revoked, or the persisted data is removed.
 
 If authentication fails three consecutive times, the persisted AdGuard data is reset and the browser flow is requested again. Adjust `ADGUARD_AUTH_RESET_AFTER_FAILURES` if needed.
 
@@ -117,22 +135,27 @@ services:
         container_name: adguard-vpn-cli
         env_file: .env
         volumes:
-            - adguard-auth:/home/appuser/.local/share/adguardvpn-cli
+            - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            test: ["CMD-SHELL", "adguardvpn-cli status >/dev/null 2>&1 || exit 1"]
+            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE 'Connected.*mode' || exit 1"]
             interval: 1m
             timeout: 10s
-            retries: 2
-            start_period: 30s
+            retries: 5
+            start_period: 5m
         cap_add:
             - NET_ADMIN
         devices:
             - /dev/net/tun
         ports:
-            - 127.0.0.1:1080:1080
-            - 127.0.0.1:6089:6089
-            - 6881:6881
-            - 6881:6881/udp
+            - "127.0.0.1:1080:1080"
+            - "127.0.0.1:6089:6089"
+            - "6881:6881"
+            - "6881:6881/udp"
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: "1.0"
     qbittorrent:
         image: linuxserver/qbittorrent:latest
         container_name: qbittorrent
@@ -150,10 +173,9 @@ services:
         depends_on:
             - adguard-vpn-cli
         network_mode: service:adguard-vpn-cli
-
-volumes:
-    adguard-auth:
 ```
+
+This example follows the repository default and uses the `./data` bind mount. Complete the [Getting Started](#getting-started) directory setup first. If you prefer Docker-managed storage, use the named-volume mapping described in [Persistence Options](#persistence-options) instead.
 
 > A sidecar with `network_mode: service:adguard-vpn-cli` automatically shares the VPN container's network namespace, including its effective MAC. This is a Docker networking guarantee, not an identity-feature contract — see [Verified scope](#verified-scope) below.
 
@@ -342,24 +364,36 @@ ip -br link show eth0   # link/ether should match the file
 
 ### Manual rotation
 
-To deliberately rotate the in-namespace effective MAC (this may cause the upstream AdGuard server to require re-authentication):
+To deliberately rotate the in-namespace effective MAC (this may cause the upstream AdGuard server to require re-authentication), stop the service and remove the identity file from the persistence method you selected.
+
+For the default `./data` bind mount:
 
 ```bash
-rm -f data/identity/mac
-docker compose up -d    # next boot regenerates
+docker compose stop adguard-vpn-cli
+rm -f ./data/identity/mac
+docker compose up -d
+```
+
+For the named-volume alternative:
+
+```bash
+docker compose stop adguard-vpn-cli
+docker compose run --rm --no-deps --entrypoint rm adguard-vpn-cli \
+    -f /home/appuser/.local/share/adguardvpn-cli/identity/mac
+docker compose up -d
 ```
 
 ### Requirements and limits
 
 - Requires the image's `appuser ALL=(root) NOPASSWD: ALL` rule (installed by the Dockerfile) and `NET_ADMIN` capability (default in `docker-compose.yml`).
 - Hardened SOCKS deployments that drop `NET_ADMIN` will fail closed (exit 78) when this option is enabled. Plain SOCKS without `NET_ADMIN` continues to work, but only with `ADGUARD_PERSISTENT_IDENTITY=false`.
-- Each VPN container must have its **own** `./data` volume. Multiple containers sharing a single `data/identity/mac` will collide on the same MAC and the same first-boot write race; that configuration is not supported.
+- Each VPN container must have its **own** bind directory or named volume. Multiple containers sharing the same persistence storage will collide on the same identity file and the same first-boot write race; that configuration is not supported.
 - `network_mode: service:adguard-vpn-cli` (the qBittorrent-in-shared-namespace pattern in `How to use`) automatically inherits the VPN container's MAC — no extra configuration needed.
 - **Not supported** in `network_mode: host`, macvlan, Docker Desktop (without privileged Linux VM), or rootless Docker. The default `docker-compose.yml` is the only verified target.
 
 ### Verified scope
 
-The guarantee covers the container's **network namespace effective MAC** (`ip link show <iface>`). Docker's per-endpoint MAC metadata (`docker inspect`) may diverge and is not part of the contract — always compare the in-namespace `ip link` value to `data/identity/mac`, not `docker inspect` output.
+The guarantee covers the container's **network namespace effective MAC** (`ip link show <iface>`). Docker's per-endpoint MAC metadata (`docker inspect`) may diverge and is not part of the contract — always compare the in-namespace `ip link` value to `/home/appuser/.local/share/adguardvpn-cli/identity/mac`, not `docker inspect` output.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -380,7 +414,7 @@ OPEN THIS LINK IN YOUR BROWSER:
 - The link expires after **15 minutes** (configurable via `ADGUARD_AUTH_TIMEOUT`).
 - If you miss the window, the container exits and restarts automatically — look for the new URL in the logs after restart.
 - If authentication repeatedly fails (`ADGUARD_AUTH_RESET_AFTER_FAILURES` consecutive failures, default 3), the data directory is reset and a new OAuth flow begins.
-- To force a fresh authentication, stop the container and delete the mounted data directory (`./data`), then restart.
+- To force a fresh authentication, stop the container and remove its persisted data. Delete `./data` when using the default bind mount, or run `docker compose down -v` when using the named-volume alternative, then start the service again.
 
 ### "Data directory is not writable" error
 
@@ -391,7 +425,7 @@ ERROR: Data directory is not writable: /home/appuser/.local/share/adguardvpn-cli
 ERROR: Run: sudo chown -R 1001:1001 ./data
 ```
 
-Fix: `sudo chown -R 1001:1001 ./data` (adjust UID if you use a custom `PUID` build arg).
+For the default bind mount, run `sudo chown -R 1001:1001 ./data`. Adjust the UID/GID only if you built a custom image with different `PUID`/`PGID` build arguments. A newly created named volume normally inherits the image directory's ownership and does not need this host-side fix.
 
 ### Kill switch terminates the container unexpectedly
 
@@ -419,7 +453,7 @@ The kill switch monitors VPN status and terminates the container on IP leaks. Co
 - If the SOCKS proxy is publicly exposed, set `ADGUARD_SOCKS5_USERNAME` and `ADGUARD_SOCKS5_PASSWORD` to enable authentication.
 - The SOCKS listener binds to `127.0.0.1:1080` by default. Use `ADGUARD_SOCKS5_HOST=0.0.0.0` to listen on all interfaces (requires Docker port publishing).
 
-### Port 6881 / 6089 — what are these?
+### Ports 1080 / 6089 / 6881 — what are these?
 
 - **1080**: SOCKS5 proxy port (when `ADGUARD_CONNECTION_TYPE=SOCKS`).
 - **6089**: AdGuard VPN CLI internal API / DNS proxy port. Used for DNS filtering features.
@@ -498,4 +532,3 @@ The `.dockerignore` file excludes `.env` and `.env.example` from the build conte
 [forks-url]: https://github.com/supersunho/docker-adguardvpn-cli/network/members
 [stars-shield]: https://img.shields.io/github/stars/supersunho/docker-adguardvpn-cli.svg?style=for-the-badge
 [stars-url]: https://github.com/supersunho/docker-adguardvpn-cli/stargazers
-
