@@ -2,15 +2,19 @@
 #
 # Test: Release-notes tag-range selection
 #
-# Verifies the four scenarios the user reported as broken:
+# Verifies the release sequences reported by the user:
 #   1. 2.0.0 (main) -> 2.1.0-beta.1: should diff only v2.0.0..v2.1.0-beta.1
 #   2. 2.1.0-beta.1 -> 2.1.0-beta.2 (5 commits between): should diff only
 #      v2.1.0-beta.1..v2.1.0-beta.2
 #   3. Beta-in-progress (beta.2 cut from beta.1, no merge to main):
 #      v2.1.0-beta.1..v2.1.0-beta.2
 #   4. 2.1.0-beta.3 merged into main, then 2.1.0 stable released:
-#      should diff v2.1.0-beta.3..v2.1.0 (or v2.1.0-beta.1..v2.1.0
-#      depending on whether betas are ancestors of main HEAD).
+#      should cover the full v2.0.0...v2.1.0 cycle.
+#   5. main and beta contain patch-equivalent v2.0.0 histories with different
+#      commit IDs: should still select v2.0.0 and list only beta's seven changes.
+#   6. beta.2 should include exactly the five commits after beta.1.
+#   7. stable 2.1.0 should include the full beta cycle plus commits added after
+#      beta.3 but before beta was merged.
 #
 # Builds a sandbox git repo per scenario, runs the EXACT shell snippet
 # from the workflow in `set -euo pipefail` mode, and asserts the
@@ -76,6 +80,111 @@ build_sandbox() {
     cd - >/dev/null
 }
 
+# Build the topology that triggered the production failure. The stable and
+# beta lines contain the same v2.0.0 patch and tree, but that boundary has a
+# different commit ID on each branch. Seven beta-only patches follow it.
+build_rewritten_history_sandbox() {
+    local sandbox="$1"
+    rm -rf "$sandbox"
+    mkdir -p "$sandbox"
+    cd "$sandbox"
+    git init -q -b main
+    git config user.email "test@example.com"
+    git config user.name "Test"
+
+    echo "initial" > initial.txt
+    git add initial.txt
+    git commit -q -m "initial"
+    local root
+    root="$(git rev-parse HEAD)"
+
+    echo "stable state" > stable.txt
+    git add stable.txt
+    git commit -q -m "stable boundary"
+    git tag v2.0.0
+
+    git checkout -q -b beta "$root"
+    echo "stable state" > stable.txt
+    git add stable.txt
+    git commit -q -m "rewritten stable boundary"
+
+    for i in $(seq 1 7); do
+        echo "beta change $i" > "beta-${i}.txt"
+        git add "beta-${i}.txt"
+        git commit -q -m "feat: beta change $i"
+    done
+    git tag v2.1.0-beta.1
+
+    cd - >/dev/null
+}
+
+build_incremental_beta_sandbox() {
+    local sandbox="$1"
+    rm -rf "$sandbox"
+    mkdir -p "$sandbox"
+    cd "$sandbox"
+    git init -q -b main
+    git config user.email "test@example.com"
+    git config user.name "Test"
+
+    echo "v2.0.0" > version.txt
+    git add version.txt
+    git commit -q -m "release: 2.0.0"
+    git tag v2.0.0
+
+    git checkout -q -b beta
+    echo "beta.1" > beta-1.txt
+    git add beta-1.txt
+    git commit -q -m "feat: beta.1 baseline"
+    git tag v2.1.0-beta.1
+
+    for i in $(seq 1 5); do
+        echo "beta.2 change $i" > "beta-2-change-${i}.txt"
+        git add "beta-2-change-${i}.txt"
+        git commit -q -m "feat: beta.2 change $i"
+    done
+    git tag v2.1.0-beta.2
+
+    cd - >/dev/null
+}
+
+build_full_beta_cycle_sandbox() {
+    local sandbox="$1"
+    rm -rf "$sandbox"
+    mkdir -p "$sandbox"
+    cd "$sandbox"
+    git init -q -b main
+    git config user.email "test@example.com"
+    git config user.name "Test"
+
+    echo "v2.0.0" > version.txt
+    git add version.txt
+    git commit -q -m "release: 2.0.0"
+    git tag v2.0.0
+
+    git checkout -q -b beta
+    for i in $(seq 1 7); do
+        echo "beta cycle $i" > "beta-cycle-${i}.txt"
+        git add "beta-cycle-${i}.txt"
+        git commit -q -m "feat: beta cycle $i"
+        case "$i" in
+            1) git tag v2.1.0-beta.1 ;;
+            3) git tag v2.1.0-beta.2 ;;
+            5) git tag v2.1.0-beta.3 ;;
+        esac
+    done
+
+    # Commits 6 and 7 are intentionally after beta.3 and before the merge.
+    git checkout -q main
+    git merge -q --no-ff -m "merge: beta into main" beta
+    echo "v2.1.0" > version.txt
+    git add version.txt
+    git commit -q -m "release: 2.1.0"
+    git tag v2.1.0
+
+    cd - >/dev/null
+}
+
 # Extract the tag-resolution snippet from the workflow and run it in the
 # current sandbox. Outputs the chosen PREV_TAG.
 resolve_prev_tag() {
@@ -94,31 +203,30 @@ resolve_prev_tag() {
 
         PREV_TAG=""
 
-        # Tier 1: same MAJOR.MINOR.PATCH base, reachable from HEAD.
-        # Only active for prerelease builds.
+        # Tier 1: same MAJOR.MINOR.PATCH base and lower semantic version.
+        # Only active for prerelease builds; ancestry is intentionally ignored.
         if [ "$PRERELEASE_FLAG" = "true" ]; then
             for tag in "${ALL_TAGS[@]}"; do
                 [ "$tag" = "$CURRENT_TAG" ] && continue
                 tag_clean="${tag#v}"
                 tag_base="${tag_clean%%-*}"
                 [ "$tag_base" = "$BUILD_VERSION_BASE" ] || continue
-                if git merge-base --is-ancestor "$tag" HEAD 2>/dev/null; then
-                    PREV_TAG="$tag"
-                    break
-                fi
+                [ "$tag_clean" != "$tag_base" ] || continue
+                lowest=$(printf "%s\n%s\n" "$tag" "$CURRENT_TAG" | sort -V | head -n1)
+                [ "$lowest" = "$tag" ] || continue
+                PREV_TAG="$tag"
+                break
             done
         fi
 
-        # Tier 2: any reachable tag with a lower version than current,
-        # excluding tags that share the current base (those are owned
-        # by Tier 1 for prereleases or must never be selected for stable).
+        # Tier 2: latest lower stable tag with a different version base.
         if [ -z "$PREV_TAG" ]; then
             for tag in "${ALL_TAGS[@]}"; do
                 [ "$tag" = "$CURRENT_TAG" ] && continue
                 tag_clean="${tag#v}"
                 tag_base="${tag_clean%%-*}"
                 [ "$tag_base" != "$BUILD_VERSION_BASE" ] || continue
-                git merge-base --is-ancestor "$tag" HEAD 2>/dev/null || continue
+                [ "$tag_clean" = "$tag_base" ] || continue
                 lowest=$(printf "%s\n%s\n" "$tag" "$CURRENT_TAG" | sort -V | head -n1)
                 [ "$lowest" = "$tag" ] || continue
                 PREV_TAG="$tag"
@@ -131,6 +239,17 @@ resolve_prev_tag() {
         fi
         echo "$PREV_TAG"
     '
+}
+
+release_commits() {
+    local previous_tag="$1"
+    git log --right-only --cherry-pick --no-merges \
+        --pretty=format:"%h|%s" "${previous_tag}...HEAD"
+}
+
+release_subjects() {
+    local previous_tag="$1"
+    release_commits "$previous_tag" | cut -d'|' -f2- | sort | paste -sd'|' -
 }
 
 assert_eq() {
@@ -250,21 +369,23 @@ test_scenario_4_stable_after_merge() {
 # Scenario 6: Workflow is in place and uses the new logic
 # =============================================================================
 test_workflow_uses_new_logic() {
-    if grep -q 'Tier 1: same MAJOR.MINOR.PATCH' "$WORKFLOW"; then
-        echo "  PASS: workflow contains tiered PREV_TAG logic"
+    if grep -q -- '--right-only --cherry-pick --no-merges' "$WORKFLOW"; then
+        echo "  PASS: workflow uses patch-equivalent release comparison"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: workflow missing tiered PREV_TAG logic"
+        echo "  FAIL: workflow missing patch-equivalent release comparison"
         FAIL=$((FAIL + 1))
     fi
-    # Only flag if the bare pattern appears OUTSIDE of a comment line.
+
+    # Ancestry-only filters caused rewritten-but-equivalent histories to fall
+    # back to the initial commit. They must not be used by the workflow logic.
     local bad
-    bad=$(grep -n -- '--merged HEAD' "$WORKFLOW" | awk -F: '$1 ~ /^[0-9]+$/ { line=""; for (i=2;i<=NF;i++) line=line (i==2?"":":") $i; sub(/^[[:space:]]*/,"",line); if (line !~ /^#/) print }' || true)
+    bad=$(grep -nE -- 'git tag --merged HEAD|git merge-base --is-ancestor' "$WORKFLOW" || true)
     if [ -z "$bad" ]; then
-        echo "  PASS: workflow no longer uses --merged HEAD outside comments"
+        echo "  PASS: workflow does not require previous tags to be ancestors"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: workflow still uses --merged HEAD:"
+        echo "  FAIL: workflow still contains ancestry-only tag filtering:"
         echo "$bad"
         FAIL=$((FAIL + 1))
     fi
@@ -296,7 +417,7 @@ test_scenario_4b_documents_pinned_behavior() {
     # B1 + B2 + B3 + release = 4 commits — the full beta line that was
     # merged in, NOT just the last beta.
     local commit_count
-    commit_count="$(git rev-list --count "$prev"..HEAD)"
+    commit_count="$(release_commits "$prev" | awk 'NF { count++ } END { print count + 0 }')"
     cd - >/dev/null
     rm -rf "$sandbox"
 
@@ -325,13 +446,101 @@ test_scenario_4c_full_beta_branch_merged() {
     local prev
     prev="$(resolve_prev_tag "v2.1.0" "2.1.0" "false")"
     local commit_count
-    commit_count="$(git rev-list --count "$prev"..HEAD)"
+    commit_count="$(release_commits "$prev" | awk 'NF { count++ } END { print count + 0 }')"
     cd - >/dev/null
     rm -rf "$sandbox"
 
     # 5 beta commits + 1 release = 6
     assert_eq "scenario 4c: full beta branch merged, 6 commits in changelog" "6" "$commit_count"
 }
+
+# =============================================================================
+# Scenario 4d: v2.0.0 and beta have patch-equivalent rewritten histories.
+# The previous stable is not an ancestor, but only seven beta patches belong in
+# the release notes.
+# =============================================================================
+test_scenario_4d_rewritten_patch_equivalent_history() {
+    local sandbox
+    sandbox="$(mktemp -d)"
+    build_rewritten_history_sandbox "$sandbox"
+
+    cd "$sandbox"
+    git checkout -q v2.1.0-beta.1
+
+    local prev commit_count boundary_status
+    prev="$(resolve_prev_tag "v2.1.0-beta.1" "2.1.0" "true")"
+    commit_count="$(release_commits "$prev" | awk 'NF { count++ } END { print count + 0 }')"
+
+    if git merge-base --is-ancestor v2.0.0 HEAD 2>/dev/null; then
+        boundary_status="ancestor"
+    elif git diff --quiet v2.0.0 HEAD~7; then
+        boundary_status="rewritten-equivalent"
+    else
+        boundary_status="different"
+    fi
+
+    cd - >/dev/null
+    rm -rf "$sandbox"
+
+    assert_eq "scenario 4d: rewritten history still selects previous stable" "v2.0.0" "$prev"
+    assert_eq "scenario 4d: stable boundary is equivalent but not ancestral" "rewritten-equivalent" "$boundary_status"
+    assert_eq "scenario 4d: only seven beta patches enter changelog" "7" "$commit_count"
+}
+
+# =============================================================================
+# Scenario 4e: beta.2 contains exactly five commits after beta.1.
+# =============================================================================
+test_scenario_4e_beta2_only_since_beta1() {
+    local sandbox
+    sandbox="$(mktemp -d)"
+    build_incremental_beta_sandbox "$sandbox"
+
+    cd "$sandbox"
+    git checkout -q v2.1.0-beta.2
+
+    local prev commit_count subjects
+    prev="$(resolve_prev_tag "v2.1.0-beta.2" "2.1.0" "true")"
+    commit_count="$(release_commits "$prev" | awk 'NF { count++ } END { print count + 0 }')"
+    subjects="$(release_subjects "$prev")"
+
+    cd - >/dev/null
+    rm -rf "$sandbox"
+
+    assert_eq "scenario 4e: beta.2 selects beta.1" "v2.1.0-beta.1" "$prev"
+    assert_eq "scenario 4e: beta.2 changelog contains five new commits" "5" "$commit_count"
+    assert_eq "scenario 4e: beta.2 excludes beta.1 and older history" \
+        "feat: beta.2 change 1|feat: beta.2 change 2|feat: beta.2 change 3|feat: beta.2 change 4|feat: beta.2 change 5" \
+        "$subjects"
+}
+
+# =============================================================================
+# Scenario 4f: stable 2.1.0 contains the complete beta cycle, including commits
+# made after beta.3 and before beta was merged. The merge commit itself is noise
+# and must remain excluded.
+# =============================================================================
+test_scenario_4f_stable_includes_post_beta3_premerge_commits() {
+    local sandbox
+    sandbox="$(mktemp -d)"
+    build_full_beta_cycle_sandbox "$sandbox"
+
+    cd "$sandbox"
+    git checkout -q v2.1.0
+
+    local prev commit_count subjects
+    prev="$(resolve_prev_tag "v2.1.0" "2.1.0" "false")"
+    commit_count="$(release_commits "$prev" | awk 'NF { count++ } END { print count + 0 }')"
+    subjects="$(release_subjects "$prev")"
+
+    cd - >/dev/null
+    rm -rf "$sandbox"
+
+    assert_eq "scenario 4f: stable selects the previous stable" "v2.0.0" "$prev"
+    assert_eq "scenario 4f: stable contains seven beta commits plus release commit" "8" "$commit_count"
+    assert_eq "scenario 4f: stable includes beta.3-to-merge commits and excludes merge noise" \
+        "feat: beta cycle 1|feat: beta cycle 2|feat: beta cycle 3|feat: beta cycle 4|feat: beta cycle 5|feat: beta cycle 6|feat: beta cycle 7|release: 2.1.0" \
+        "$subjects"
+}
+
 # =============================================================================
 # Scenario 5: v2.0.0 is the only tag, building v2.0.0 again would have
 # no previous. Skip — covered by existing initial-commit fallback.
@@ -382,6 +591,12 @@ echo ""
 test_scenario_4b_documents_pinned_behavior
 echo ""
 test_scenario_4c_full_beta_branch_merged
+echo ""
+test_scenario_4d_rewritten_patch_equivalent_history
+echo ""
+test_scenario_4e_beta2_only_since_beta1
+echo ""
+test_scenario_4f_stable_includes_post_beta3_premerge_commits
 echo ""
 test_scenario_5_no_tags
 echo ""
