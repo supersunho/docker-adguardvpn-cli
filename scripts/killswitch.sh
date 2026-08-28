@@ -105,11 +105,14 @@ while true; do
     #### authoritative: if adguardvpn-cli says Connected and the
     #### SOCKS5 port is listening, the tunnel is up.  We cannot
     #### detect a real leak by comparing IPs, so skip the leak
-    #### check and treat SOCKS mode as a steady PROTECTED state.
     if is_socks_mode; then
-        if [ "$_KS_CURRENT_STATE" = "$KS_STANDBY" ]; then
-            ks_set_state "$KS_PROTECTED"
-        fi
+        #### SOCKS mode: the status check at step 1 (ks_is_vpn_connected)
+        #### is authoritative.  KS_CURRENT_IP is a sentinel
+        #### (KS_REAL_IP/KS_VPN_IP) in SOCKS mode, so ks_is_leak
+        #### would falsely report a leak every iteration.  Stay in
+        #### PROTECTED whenever the status check passes; do not
+        #### invoke ks_is_leak at all.
+        ks_set_state "$KS_PROTECTED" 2>/dev/null || true
         return 0
     fi
     if ks_is_leak; then
