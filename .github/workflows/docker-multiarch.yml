@@ -875,6 +875,23 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+            - name: 📝 Sync selected release draft
+              if: steps.github-release.outputs.id != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ steps.github-release.outputs.id }}
+                  PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+              run: |
+                  set -euo pipefail
+                  # canonicalization may select a pre-existing draft. Refresh its metadata
+                  # so the selected release points at this build and has the generated notes.
+                  gh api --method PATCH \
+                    "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+                    -F target_commitish="$GITHUB_SHA" \
+                    -F body=@release-notes.txt \
+                    -F prerelease="$PRERELEASE" >/dev/null
+                  echo "✅ Synced release ID ${RELEASE_ID}"
+
             - name: 🚀 Publish GitHub Release
               if: steps.github-release.outputs.id != ''
               env:

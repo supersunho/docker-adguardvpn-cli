@@ -181,6 +181,7 @@ test_release_publishes_after_upload() {
        echo "$release_block" | grep -q 'draft: true' && \
        echo "$release_block" | grep -q 'Publish GitHub Release' && \
        echo "$release_block" | grep -q 'RELEASE_ID:.*steps.github-release.outputs.id' && \
+       echo "$release_block" | grep -q 'body=@release-notes.txt' && \
        echo "$release_block" | grep -q "releases/\${RELEASE_ID}" && \
        echo "$release_block" | grep -q -- '-F draft=false'; then
         echo "  PASS: Release is published only after asset upload using its release ID"
