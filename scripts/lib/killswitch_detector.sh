@@ -209,9 +209,27 @@ ks_detect_current_ip() {
 
 # Check if the VPN service is currently connected.
 ks_is_vpn_connected() {
+    #### In SOCKS mode, adguardvpn-cli status output is unstable after the
+    #### initial Connected message — it can report Disconnected in steady
+    #### state even though the SOCKS5 proxy is still listening.  We treat
+    #### the local SOCKS5 listener as authoritative when configured for
+    #### SOCKS mode; the HTTP status check is the fallback for TUN.
+    if is_socks_mode && ks_socks_port_listening; then
+        return 0
+    fi
     check_adguard_vpn_status
 }
 
+# Check if the configured SOCKS5 port is currently listening on localhost.
+# Returns 0 if a TCP listener is observed on the port, 1 otherwise.
+ks_socks_port_listening() {
+    local port="${ADGUARD_SOCKS5_PORT:-1080}"
+    local hex_port
+    hex_port=$(printf '%04X' "$port")
+    awk -v want="$hex_port" \
+        '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
+        /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
 # Check if the current IP represents a leak (matches the original real IP).
 ks_is_leak() {
     [ "$KS_CURRENT_IP" = "$KS_REAL_IP" ]

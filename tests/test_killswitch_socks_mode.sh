@@ -148,10 +148,82 @@ test_tun_detect_still_uses_ip() {
     fi
 }
 
+test_socks_is_connected_returns_on_port_listening() {
+    #### SOCKS mode + SOCKS5 port listening -> ks_is_vpn_connected returns 0
+    #### even if adguardvpn-cli status fails (status output is unstable in
+    #### steady state for SOCKS mode).
+    export ADGUARD_CONNECTION_TYPE=SOCKS
+    export ADGUARD_SOCKS5_PORT=19471
+    if is_socks_mode; then :; else
+        echo "  FAIL: is_socks_mode did not detect SOCKS mode"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    # Stub check_adguard_vpn_status to fail (return 1) -- simulates
+    # post-Connected status instability in SOCKS mode.
+    check_adguard_vpn_status() { return 1; }
+    # ks_socks_port_listening must be called by ks_is_vpn_connected and
+    # return 0 (port listening).  Inject a fake /proc/net/tcp with a
+    # listening entry for port 19471 (0x4C0F).
+    FAKE_PROC_DIR=$(mktemp -d)
+    printf '  0: 00000000:4C0F 00000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "$FAKE_PROC_DIR/net_tcp"
+    printf '  0: 00000000000000000000000000000000:4C0F 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "$FAKE_PROC_DIR/net_tcp6"
+    ks_socks_port_listening() {
+        local hex_port
+        hex_port=$(printf '%04X' "${ADGUARD_SOCKS5_PORT:-1080}")
+        awk -v want="$hex_port" \
+            '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
+            "$FAKE_PROC_DIR/net_tcp" "$FAKE_PROC_DIR/net_tcp6" 2>/dev/null
+    }
+    if ks_socks_port_listening; then
+        if ks_is_vpn_connected; then
+            echo "  PASS: SOCKS port listening returns VPN connected"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: ks_is_vpn_connected returned false despite port listening"
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: ks_socks_port_listening did not detect fake port"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$FAKE_PROC_DIR"
+}
+
+test_socks_is_connected_fails_when_port_closed() {
+    #### SOCKS mode + SOCKS5 port NOT listening + status fails -> return 1
+    export ADGUARD_CONNECTION_TYPE=SOCKS
+    export ADGUARD_SOCKS5_PORT=19471
+    check_adguard_vpn_status() { return 1; }
+    FAKE_PROC_DIR=$(mktemp -d)
+    printf '  0: 00000000:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "$FAKE_PROC_DIR/net_tcp"
+    printf '  0: 00000000:0050 00000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "$FAKE_PROC_DIR/net_tcp6"
+    ks_socks_port_listening() {
+        local hex_port
+        hex_port=$(printf '%04X' "${ADGUARD_SOCKS5_PORT:-1080}")
+        awk -v want="$hex_port" \
+            '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
+            "$FAKE_PROC_DIR/net_tcp" "$FAKE_PROC_DIR/net_tcp6" 2>/dev/null
+    }
+    if ks_socks_port_listening; then
+        echo "  FAIL: ks_socks_port_listening reported listening for non-existent port"
+        FAIL=$((FAIL + 1))
+    else
+        if ks_is_vpn_connected; then
+            echo "  FAIL: ks_is_vpn_connected returned true despite port closed and status fail"
+            FAIL=$((FAIL + 1))
+        else
+            echo "  PASS: SOCKS port closed + status fail -> return 1"
+            PASS=$((PASS + 1))
+        fi
+    fi
+}
 test_socks_wait_returns_on_connected
 test_socks_detect_returns_on_connected
 test_socks_detect_fails_on_disconnected
 test_tun_detect_still_uses_ip
+test_socks_is_connected_returns_on_port_listening
+test_socks_is_connected_fails_when_port_closed
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed (killswitch SOCKS mode)"
