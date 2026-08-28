@@ -137,7 +137,7 @@ services:
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE 'Connected.*mode' || exit 1"]
+            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qEi '(^|[^[:alpha:]])Connected([^[:alpha:]]|$)' || exit 1"]
             interval: 1m
             timeout: 10s
             retries: 5

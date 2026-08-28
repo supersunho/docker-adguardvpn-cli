@@ -56,8 +56,13 @@ ks_detect_ip_consistent() {
             echo "$ip"
             return 0
         fi
-        # Locked method failed — treat as ERROR (kill switch will retry via caller)
-        echo "ERROR"
+        ## Locked method failed -- drop the lock so the next call will
+        ## re-discover a working HTTP method.  Without this, a transient
+        ## outage of the locked service makes every subsequent detection
+        ## return ERROR until the kill switch is restarted, which causes
+        ## the tunnel to be torn down even though other services still work.
+        log WARN "Locked HTTP method ${KS_LOCKED_HTTP_ID} failed; re-discovering on next call"
+        KS_LOCKED_HTTP_ID=""
         return 1
     fi
 
@@ -123,11 +128,19 @@ ks_wait_for_vpn_tunnel() {
         if check_adguard_vpn_status; then
             local temp_ip
             temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
-            if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ] && \
-               [ "$temp_ip" != "$KS_REAL_IP" ]; then
-                log INFO "VPN tunnel active, IP changed to ${temp_ip}"
-                KS_VPN_IP="$temp_ip"
-                return 0
+            if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ]; then
+                if [ "$temp_ip" != "$KS_REAL_IP" ]; then
+                    log INFO "VPN tunnel active, IP changed to ${temp_ip}"
+                    KS_VPN_IP="$temp_ip"
+                    return 0
+                fi
+                ## VPN status reports Connected but the detected IP still
+                ## matches the pre-VPN real IP.  This is the classic
+                ## TUN/SOCKS propagation race: routes flip a few hundred ms
+                ## after the daemon says it is up.  Trust the daemon and let
+                ## the main loop re-check on the next iteration.  The hard
+                ## KS_MAX_WAIT_TIME timeout below still terminates.
+                log INFO "VPN status reports Connected; waiting for IP to change (${elapsed}s elapsed)"
             fi
 
             if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then

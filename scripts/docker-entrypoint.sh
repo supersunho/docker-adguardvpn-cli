@@ -298,8 +298,13 @@ fi
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Activating Kill Switch..."
-    log INFO "Stabilizing VPN connection (5s)..."
-    sleep 5 &
+    ## ADGUARD_VPN_STARTUP_GRACE_SECONDS gives the tunnel time to fully propagate
+    ## before the kill switch starts comparing IPs.  Default 5s matches the
+    ## historical hard-coded delay; raise it (15-30s) if the kill switch keeps
+    ## terminating with "VPN tunnel did not activate".
+    _KS_STABILIZE_DELAY="${ADGUARD_VPN_STARTUP_GRACE_SECONDS:-5}"
+    log INFO "Stabilizing VPN connection (${_KS_STABILIZE_DELAY}s)..."
+    sleep "$_KS_STABILIZE_DELAY" &
     wait $!
 
     if [ "$REAL_IP" = "ERROR" ]; then

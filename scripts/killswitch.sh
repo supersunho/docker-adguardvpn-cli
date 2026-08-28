@@ -50,7 +50,13 @@ if ! ks_wait_for_vpn_tunnel; then
     ks_terminate "VPN tunnel did not activate within ${KS_MAX_WAIT_TIME}s"
 fi
 
-ks_set_state "$KS_PROTECTED"
+## Only transition to PROTECTED if we observed a real IP change during the
+## tunnel wait.  Soft-success (status=Connected but IP still real-IP) means
+## routes are still flipping — let the main loop's STANDBY->PROTECTED guard
+## (line ~128 in this file) handle the transition once propagation finishes.
+if [ "$KS_VPN_IP" != "$KS_REAL_IP" ] && [ -n "$KS_VPN_IP" ]; then
+    ks_set_state "$KS_PROTECTED"
+fi
 
 # =============================================================================
 # Tracking variables

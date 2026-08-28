@@ -10,7 +10,7 @@ services:
             # Use same regex pattern as check_adguard_vpn_status() in vpn_status.sh
             # for consistency between kill-switch and health check logic.
             # In SOCKS mode, also verify the proxy listener is accepting connections.
-            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE 'Connected.*mode' || exit 1"]
+            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qEi '(^|[^[:alpha:]])Connected([^[:alpha:]]|$)' || exit 1"]
             interval: 1m
             timeout: 10s
             retries: 5
