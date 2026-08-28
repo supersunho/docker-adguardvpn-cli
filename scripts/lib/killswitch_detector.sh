@@ -128,6 +128,13 @@ ks_wait_for_vpn_tunnel() {
         if check_adguard_vpn_status; then
             if is_socks_mode; then
                 log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Connected)"
+                ## Set KS_VPN_IP to a sentinel (KS_REAL_IP) so downstream
+                ## callers (ks_is_leak / ks_detect_ip_change) do not hit
+                ## an unbound variable.  SOCKS mode never gets a real
+                ## detected VPN IP via the proxy, so we treat the
+                ## pre-VPN real IP as the "VPN IP" — the SOCKS-mode
+                ## caller overrides via check_adguard_vpn_status anyway.
+                KS_VPN_IP="$KS_REAL_IP"
                 return 0
             fi
             local temp_ip
