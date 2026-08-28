@@ -152,9 +152,23 @@ ks_wait_for_vpn_tunnel() {
                     log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
                 fi
             fi
+        ## In SOCKS mode, the adguardvpn-cli status output is unstable:
+        ## 5-8 seconds after the initial Connected message, the daemon
+        ## can report Disconnected in steady state even though the SOCKS5
+        ## proxy is still actively listening.  When the status check fails
+        ## in SOCKS mode, fall back to the most authoritative signal we
+        ## have: a "Successfully Connected" line in the tunnel log
+        ## (proves the tunnel was up at least once) AND the SOCKS5 port
+        ## still listening on the configured ADGUARD_SOCKS5_PORT (proves
+        ## the tunnel is up right now).  Both conditions must hold;
+        ## otherwise the tunnel truly is down and we keep waiting.
+        elif is_socks_mode && ks_tunnel_connected_in_log && ks_socks_port_listening; then
+            log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Disconnected in steady state)"
+            return 0
         else
             log DEBUG "VPN not connected yet..."
         fi
+
 
         sleep "$poll_interval"
         elapsed=$((elapsed + poll_interval))
@@ -229,6 +243,18 @@ ks_socks_port_listening() {
     awk -v want="$hex_port" \
         '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
         /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
+# Check if the adguardvpn-cli tunnel log contains a successful Connected
+# entry.  Used as a one-shot liveness check for SOCKS mode: the SOCKS5
+# port listening proves the tunnel is up right now, and the log check
+# proves it has been up at least once (so we are not just hitting a
+# port that some other process is squatting on).
+# Returns: 0 if "Successfully Connected" line found, 1 otherwise.
+ks_tunnel_connected_in_log() {
+    local log_path="${ADGUARD_TUNNEL_LOG_PATH:-/home/appuser/.local/share/adguardvpn-cli/tunnel.log}"
+    [ -r "$log_path" ] || return 1
+    grep -q "Successfully Connected" "$log_path" 2>/dev/null
 }
 # Check if the current IP represents a leak (matches the original real IP).
 ks_is_leak() {
