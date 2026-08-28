@@ -169,6 +169,29 @@ test_release_downloads_digest_artifacts() {
 }
 
 # =============================================================================
+# Test 12: Release assets are uploaded before the release is published
+# =============================================================================
+
+test_release_publishes_after_upload() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local release_block
+    release_block=$(sed -n '/create-release:/,$p' "$workflow")
+
+    if echo "$release_block" | grep -q 'id: github-release' && \
+       echo "$release_block" | grep -q 'draft: true' && \
+       echo "$release_block" | grep -q 'Publish GitHub Release' && \
+       echo "$release_block" | grep -q 'RELEASE_ID:.*steps.github-release.outputs.id' && \
+       echo "$release_block" | grep -q "releases/\${RELEASE_ID}" && \
+       echo "$release_block" | grep -q -- '-F draft=false'; then
+        echo "  PASS: Release is published only after asset upload using its release ID"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Release publication is not tied to the uploaded draft release"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Test 11: Stable promotion does not interpolate inputs into shell commands
 # =============================================================================
 
@@ -278,6 +301,8 @@ echo ""
 test_latest_alias_is_guarded
 echo ""
 test_release_downloads_digest_artifacts
+echo ""
+test_release_publishes_after_upload
 echo ""
 test_promotion_workflow_uses_safe_inputs
 echo ""

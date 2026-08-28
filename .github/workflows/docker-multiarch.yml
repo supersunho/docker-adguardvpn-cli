@@ -858,7 +858,8 @@ jobs:
 
                   echo "✅ Release notes generated"
 
-            - name: 🏷️ Create GitHub Release
+            - name: 🏷️ Create GitHub Release draft
+              id: github-release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.release_tag }}
@@ -866,7 +867,29 @@ jobs:
                   name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.release_tag }}"
                   body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/digest-*.txt
-                  draft: false
+                  # Keep the release draft while assets are uploaded. This lets reruns
+                  # reuse an existing draft for the same tag without creating a second
+                  # release that fails when GitHub creates the tag during finalization.
+                  draft: true
                   prerelease: ${{ needs.prepare.outputs.prerelease }}
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: 🚀 Publish GitHub Release
+              if: steps.github-release.outputs.id != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ steps.github-release.outputs.id }}
+                  PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+                  MAKE_LATEST: ${{ needs.prepare.outputs.publish_latest }}
+              run: |
+                  set -euo pipefail
+                  # Publish the exact release that received the digest assets. Using the
+                  # action output ID avoids a second tag lookup while an untagged draft is
+                  # being finalized and preserves the stable/latest policy from prepare.
+                  gh api --method PATCH \
+                    "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+                    -F draft=false \
+                    -F prerelease="$PRERELEASE" \
+                    -F make_latest="$MAKE_LATEST" >/dev/null
+                  echo "✅ Published release ID ${RELEASE_ID}"
