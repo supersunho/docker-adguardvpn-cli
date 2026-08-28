@@ -251,11 +251,35 @@ ks_is_vpn_connected() {
 # Returns 0 if a TCP listener is observed on the port, 1 otherwise.
 ks_socks_port_listening() {
     local port="${ADGUARD_SOCKS5_PORT:-1080}"
+    case "$(uname -s)" in
+        Linux)
+            _ks_port_listening_linux "$port"
+            ;;
+        Darwin)
+            _ks_port_listening_darwin "$port"
+            ;;
+        *)
+            log WARN "ks_socks_port_listening: unsupported OS $(uname -s); failing closed"
+            return 1
+            ;;
+    esac
+}
+
+# Linux implementation: parse /proc/net/tcp and /proc/net/tcp6 for state 0A (LISTEN).
+_ks_port_listening_linux() {
+    local port="$1"
     local hex_port
     hex_port=$(printf '%04X' "$port")
     awk -v want="$hex_port" \
         '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
         /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
+# Darwin (macOS) implementation: use lsof to find a LISTEN socket on the port.
+# `lsof` is shipped with macOS by default and is available without extra deps.
+_ks_port_listening_darwin() {
+    local port="$1"
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
 }
 
 # Check if the adguardvpn-cli tunnel log contains a successful Connected

@@ -218,6 +218,118 @@ test_socks_is_connected_fails_when_port_closed() {
         fi
     fi
 }
+
+# Save the real ks_socks_port_listening and _ks_port_listening_darwin
+# before any test stubs them.  Tests 7-9 need the real dispatcher and
+# real Darwin impl.  Bash functions can be re-sourced indirectly via
+# declare -f, but here we keep references for restoration.
+_REAL_KS_SOCKS_PORT_LISTENING_DEFINED=$(declare -f ks_socks_port_listening 2>/dev/null)
+_REAL_KS_DARWIN_DEFINED=$(declare -f _ks_port_listening_darwin 2>/dev/null)
+_REAL_KS_LINUX_DEFINED=$(declare -f _ks_port_listening_linux 2>/dev/null)
+# Helper: restore the real dispatcher and platform impls.  Used at the
+# top of tests 7-9 after earlier tests have stubbed the lib.
+_ks_restore_real_dispatcher() {
+    eval "$_REAL_KS_SOCKS_PORT_LISTENING_DEFINED"
+    eval "$_REAL_KS_DARWIN_DEFINED"
+    eval "$_REAL_KS_LINUX_DEFINED"
+}
+
+# ---- Test 7: dispatcher routes to Darwin impl when uname -s == Darwin ----
+test_socks_dispatcher_routes_to_darwin() {
+    #### The dispatcher in ks_socks_port_listening must call the
+    export ADGUARD_SOCKS5_PORT=19471
+    # Earlier tests (test 6) redefine ks_socks_port_listening for
+    # fake-proc mock; restore the real dispatcher from the saved copy.
+    _ks_restore_real_dispatcher
+    SHIM_DIR=$(mktemp -d)
+    cat > "$SHIM_DIR/uname" <<'EOF'
+#!/bin/sh
+case "$1" in
+    -s) echo Darwin ;;
+    *)  /usr/bin/uname "$@" ;;
+esac
+EOF
+    chmod +x "$SHIM_DIR/uname"
+    LSOF_DIR=$(mktemp -d)
+    cat > "$LSOF_DIR/lsof" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+    chmod +x "$LSOF_DIR/lsof"
+    PATH="$LSOF_DIR:$SHIM_DIR:$PATH"
+    if ks_socks_port_listening; then
+        echo "  PASS: dispatcher routes to Darwin impl on macOS"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: ks_socks_port_listening returned non-zero on Darwin with port open"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$SHIM_DIR" "$LSOF_DIR"
+}
+
+# ---- Test 8: Darwin impl uses lsof with correct arguments ----
+test_socks_darwin_uses_lsof() {
+    #### _ks_port_listening_darwin must invoke lsof with the configured
+    #### port and a LISTEN filter.  Stub lsof to capture the call and
+    #### return success.
+    export ADGUARD_SOCKS5_PORT=19471
+    # Earlier tests may have redefined _ks_port_listening_darwin.
+    # Restore the real Darwin impl from the saved copy.
+    _ks_restore_real_dispatcher
+    SHIM_DIR=$(mktemp -d)
+    LSOF_ARGS_FILE="$SHIM_DIR/lsof_args"
+    cat > "$SHIM_DIR/lsof" <<EOF
+#!/bin/sh
+echo "\$*" > "$LSOF_ARGS_FILE"
+exit 0
+EOF
+    chmod +x "$SHIM_DIR/lsof"
+    PATH="$SHIM_DIR:$PATH"
+    if _ks_port_listening_darwin "$ADGUARD_SOCKS5_PORT"; then
+        if [ -f "$LSOF_ARGS_FILE" ] && grep -q "19471" "$LSOF_ARGS_FILE" && \
+            grep -q "LISTEN" "$LSOF_ARGS_FILE"; then
+            echo "  PASS: Darwin impl calls lsof with port + LISTEN filter"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: Darwin impl did not call lsof with expected args"
+            echo "        lsof args file: $(cat "$LSOF_ARGS_FILE" 2>/dev/null)"
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: _ks_port_listening_darwin returned non-zero with stubbed lsof"
+        FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$SHIM_DIR"
+}
+
+# ---- Test 9: dispatcher fails closed on unsupported OS ----
+test_socks_dispatcher_unsupported_os_fails_closed() {
+    #### An unrecognised OS (not Linux, not Darwin) must make
+    #### ks_socks_port_listening return non-zero so KS treats the
+    #### tunnel as disconnected (fail-closed).
+    export ADGUARD_SOCKS5_PORT=19471
+    # Earlier tests may have stubbed the dispatcher.  Restore the
+    # real one so the unsupported-OS branch is exercised.
+    _ks_restore_real_dispatcher
+    SHIM_DIR=$(mktemp -d)
+    cat > "$SHIM_DIR/uname" <<'EOF'
+#!/bin/sh
+[ "$1" = "-s" ] && echo FreeBSD || /usr/bin/uname "$@"
+EOF
+    chmod +x "$SHIM_DIR/uname"
+    PATH="$SHIM_DIR:$PATH"
+    if ks_socks_port_listening; then
+        echo "  FAIL: dispatcher returned 0 on unsupported OS (expected fail-closed)"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: dispatcher fails closed on unsupported OS"
+        PASS=$((PASS + 1))
+    fi
+    rm -rf "$SHIM_DIR"
+}
+test_socks_dispatcher_routes_to_darwin
+test_socks_darwin_uses_lsof
+test_socks_dispatcher_unsupported_os_fails_closed
 test_socks_wait_returns_on_connected
 test_socks_detect_returns_on_connected
 test_socks_detect_fails_on_disconnected
