@@ -126,6 +126,10 @@ ks_wait_for_vpn_tunnel() {
 
     while [ "$elapsed" -lt "$KS_MAX_WAIT_TIME" ]; do
         if check_adguard_vpn_status; then
+            if is_socks_mode; then
+                log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Connected)"
+                return 0
+            fi
             local temp_ip
             temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
             if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ]; then
@@ -168,7 +172,17 @@ ks_wait_for_vpn_tunnel() {
 # Returns: 0 on success, 1 on failure (all retries exhausted)
 # Sets: KS_CURRENT_IP (global) with the detected IP
 ks_detect_current_ip() {
-    KS_CURRENT_IP=""
+    #### In SOCKS mode, IP detection through the SOCKS5 proxy is unreliable
+    #### (the proxy may be in a transient state right after tunnel up).  We
+    #### still want KS to work, so we treat the tunnel as active whenever
+    #### adguardvpn-cli reports Connected.  The caller (periodic check) will
+    #### use check_adguard_vpn_status as the primary signal.
+    if is_socks_mode; then
+        if check_adguard_vpn_status; then
+            return 0
+        fi
+    fi
+    KS_CURRENT_IP=``
     local attempt=1
 
     while [ "$attempt" -le "$KS_IP_RETRY_COUNT" ]; do

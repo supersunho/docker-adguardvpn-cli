@@ -23,7 +23,7 @@ check_adguard_vpn_status() {
     ## Case-insensitive to tolerate localized output ("connected", "CONNECTED").
     local _re='(^|[^[:alpha:]])Connected([^[:alpha:]]|$)'
     local _was_nocasematch
-    case "$-" in *i*) _was_nocasematch=set;; *) _was_nocasematch=unset;; esac
+    case "$-" in *"i"*) _was_nocasematch="set";; *) _was_nocasematch="unset";; esac
     shopt -s nocasematch
     if [[ $status =~ $_re ]]; then
         shopt -u nocasematch 2>/dev/null || true
