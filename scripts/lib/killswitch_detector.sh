@@ -189,10 +189,16 @@ ks_detect_current_ip() {
     #### In SOCKS mode, IP detection through the SOCKS5 proxy is unreliable
     #### (the proxy may be in a transient state right after tunnel up).  We
     #### still want KS to work, so we treat the tunnel as active whenever
-    #### adguardvpn-cli reports Connected.  The caller (periodic check) will
-    #### use check_adguard_vpn_status as the primary signal.
     if is_socks_mode; then
         if check_adguard_vpn_status; then
+            ## Set KS_CURRENT_IP to a sentinel (KS_VPN_IP if known) so
+            ## downstream callers (ks_is_leak / ks_detect_ip_change) do
+            ## not hit an unbound variable.  When KS_VPN_IP is empty
+            ## (we never got a real detected IP in SOCKS mode), fall
+            ## back to KS_REAL_IP; that means "not a leak" relative to
+            ## the pre-VPN real IP, which the SOCKS-mode caller already
+            ## overrides via check_adguard_vpn_status anyway.
+            KS_CURRENT_IP="${KS_VPN_IP:-$KS_REAL_IP}"
             return 0
         fi
     fi
