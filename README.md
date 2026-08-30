@@ -21,34 +21,37 @@
 
 A production-ready Docker image that wraps AdGuard VPN CLI with automatic OAuth authentication, a four-state kill-switch for IP leak prevention, and SOCKS5/TUN proxy modes. Designed for:
 
-- **Containerized VPN routing**: Route traffic of other Docker containers (e.g., qBittorrent) through an always-on VPN.
-- **Headless VPN operations**: Device-code OAuth flow handles the one-time browser login; subsequent starts require zero interaction.
-- **Leak-proof networking**: Active IP monitoring terminates the container on any VPN disconnect, with configurable tolerance and detection intervals.
-- **Self-healing**: Transient failures in auth, IP detection, and VPN connection are retried automatically.
+- **Containerized VPN routing**: Route shared-namespace containers (e.g., qBittorrent) through the TUN tunnel, or configure SOCKS-aware applications to use the SOCKS5 listener explicitly.
+- **Headless VPN operations**: Device-code OAuth flow handles the initial browser login; subsequent starts normally require no interaction while the persisted session remains valid.
+- **Leak protection**: When enabled, active IP monitoring terminates the container on a VPN disconnect and, unless warning-only mode is selected, on a detected leak. Tolerance and detection intervals are configurable.
+- **Recovery**: Authentication and IP checks use bounded retries, while the Compose restart policy retries failed startup.
 
 
 <!-- ARCHITECTURE -->
 
 ## Architecture
 
-The container runs four cooperating processes under a single entrypoint:
+`docker-entrypoint.sh` is PID 1. Initialization and runtime monitoring are separate phases, and the kill switch and status supervisor are mutually exclusive:
 
 ```text
-docker-entrypoint.sh
-    ├── config_bootstrap()     — Load env vars and validate types
-    ├── IP detection            — Discover public IP for kill-switch baseline
-    ├── init.sh                 — OAuth login → CLI config → VPN connect
-    ├── killswitch.sh           — 4-state monitor (STANDBY→PROTECTED→LEAK_WARNING→TERMINATING)
-    │   └── IP poll every 8s    — Verifies VPN IP is still active
-    └── supervisor (wait $!)    — Blocks on VPN status check; restarts on failure
+docker-entrypoint.sh (PID 1)
+    ├── config_bootstrap()              Load, normalize, and validate env vars
+    ├── data + optional identity setup  Before network, OAuth, or VPN side effects
+    ├── pre-VPN IP baseline (kill switch enabled)
+    │   ├── TUN: get_public_ip()        DNS + HTTP discovery
+    │   └── SOCKS: get_public_ip_direct() HTTP discovery without the proxy
+    ├── init.sh                         OAuth → CLI config → VPN connect
+    └── runtime monitor (one of these)
+        ├── kill switch enabled         killswitch.sh → exits on VPN/non-tolerated leak
+        └── kill switch disabled        supervise_vpn() → exits on status failure
 ```
 
 Key data flows:
 
 - **Auth**: Device-code OAuth URL → user browser → session data persisted in the mounted data storage → reused on restart.
-- **Kill switch**: Records real IP before VPN → checks current IP every 8s → if leak detected, increments counter → terminates container at tolerance threshold.
-- **SOCKS mode**: `adguardvpn-cli` runs in SOCKS5 mode (port 1080), while IP detection and healthcheck still operate through the tunnel.
-- **TUN mode**: `adguardvpn-cli` creates a TUN interface with NET_ADMIN; all container traffic is routed through it.
+- **Kill switch**: When enabled, records the real IP before VPN startup, waits for the tunnel, then checks the current IP over HTTP. The default interval is 8 seconds, the SOCKS interval can be overridden separately, and STANDBY/LEAK_WARNING checks use a faster interval.
+- **SOCKS mode**: `adguardvpn-cli` exposes a SOCKS5 listener (port 1080 by default). The pre-VPN baseline uses direct HTTP; after connection, kill-switch checks and the SOCKS healthcheck probe egress through the listener.
+- **TUN mode**: `adguardvpn-cli` creates a TUN interface and needs `NET_ADMIN` plus `/dev/net/tun`. Routing behavior is controlled by `ADGUARD_TUN_ROUTING_MODE`.
 
 <!-- GETTING STARTED -->
 
@@ -60,11 +63,19 @@ The repository's default `docker-compose.yml` uses a bind mount from `./data` on
 mkdir -p data
 sudo chown -R 1001:1001 data
 cp .env.example .env
+docker compose config --quiet
 docker compose up -d
 ```
 
 > [!IMPORTANT]
 > The published Docker image uses a fixed UID/GID of `1001:1001` for the `appuser`. Changing `PUID` and `PGID` in `.env` does **not** remap the runtime user. These are build-time arguments only — use them only when building a custom image. If the `data` directory is not writable, the container will exit immediately with a `chown` hint.
+
+The repository Compose file uses `supersunho/adguardvpn-cli:latest`. For reproducible deployments, pin the `image` to a published version tag (for example, `2.1.0-beta.3`). Pre-release builds use their version tag and do not move `latest`.
+
+Published releases include multi-architecture manifests for Linux `amd64`, `arm64`, and `arm/v7`:
+
+- Docker Hub: `supersunho/adguardvpn-cli:<tag>`
+- GitHub Container Registry: `ghcr.io/supersunho/docker-adguardvpn-cli:<tag>`
 
 ### Persistence Options
 
@@ -91,6 +102,7 @@ With this alternative, the first-start commands are simply:
 
 ```bash
 cp .env.example .env
+docker compose config --quiet
 docker compose up -d
 ```
 
@@ -124,6 +136,8 @@ If authentication fails three consecutive times, the persisted AdGuard data is r
 <!-- USAGE EXAMPLES -->
 
 ## How to use
+
+The following is an optional qBittorrent sidecar example. The repository's default Compose file starts only `adguard-vpn-cli`; add the sidecar and its shared-namespace port mappings only when you need them.
 
 AdguardVPN-CLI + qBittorrent
 
@@ -179,9 +193,22 @@ This example follows the repository default and uses the `./data` bind mount. Co
 
 > A sidecar with `network_mode: service:adguard-vpn-cli` automatically shares the VPN container's network namespace, including its effective MAC. This is a Docker networking guarantee, not an identity-feature contract — see [Verified scope](#verified-scope) below.
 
+In SOCKS mode, sharing the network namespace does not force application traffic through the proxy. Configure qBittorrent (or another client) to use the listener at `127.0.0.1:1080`; TUN mode is the transparent-routing option.
+
+### Healthcheck behavior
+
+Compose runs `/opt/adguardvpn_cli/scripts/healthcheck.sh` every minute, with a five-minute startup period. The check is mode-aware:
+
+- **TUN**: `adguardvpn-cli status` must report `Connected`.
+- **SOCKS**: the configured TCP listener must be present and a public-IP request must succeed through that proxy. A listening port by itself is not considered healthy.
+
+The healthcheck is independent of the kill-switch process. When the kill switch is enabled, a healthy container still terminates if that process detects a VPN failure or IP leak.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Prerequisites
+
+Use Docker Engine with the Compose v2 plugin. TUN mode requires a Linux host that can provide `/dev/net/tun` and the `NET_ADMIN` capability; SOCKS-only deployments can omit the TUN device unless persistent identity is enabled. The table below lists the container configuration variables.
 
 | Variable | Description | Default | Allowed values |
 | --- | --- | --- | --- |
@@ -196,20 +223,20 @@ This example follows the repository default and uses the `./data` bind mount. Co
 | `ADGUARD_AUTH_TIMEOUT` | Device-code OAuth timeout in seconds | `900` | Positive integer |
 | `ADGUARD_AUTH_RESET_AFTER_FAILURES` | Consecutive auth failures before resetting the data directory | `3` | Positive integer |
 | **SOCKS proxy** _(when `ADGUARD_CONNECTION_TYPE=SOCKS`)_ | | | |
-| `ADGUARD_SOCKS5_USERNAME` | SOCKS5 proxy username | _(empty)_ | |
-| `ADGUARD_SOCKS5_PASSWORD` | SOCKS5 proxy password | _(empty)_ | |
+| `ADGUARD_SOCKS5_USERNAME` | SOCKS5 proxy username (optional on localhost; set with a password before exposing the proxy) | _(empty)_ | String or empty |
+| `ADGUARD_SOCKS5_PASSWORD` | SOCKS5 proxy password (optional on localhost; set with a username before exposing the proxy) | _(empty)_ | String or empty |
 | `ADGUARD_SOCKS5_HOST` | SOCKS5 proxy host address | `127.0.0.1` | IPv4 address |
 | `ADGUARD_SOCKS5_PORT` | SOCKS5 proxy port | `1080` | Port 1-65535 |
 | **Kill switch** | | | |
-| `ADGUARD_USE_KILL_SWITCH` | Enable kill switch to prevent IP leaks when VPN drops | `true` | `true` / `false` |
+| `ADGUARD_USE_KILL_SWITCH` | Enable kill-switch IP/leak monitoring; when false, use the status supervisor instead | `true` | `true` / `false` |
 | `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | Kill switch check interval in seconds | `8` | Positive integer |
-| `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` | Kill switch check interval when `ADGUARD_CONNECTION_TYPE=SOCKS`; leave unset or empty to inherit `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | _(empty)_ | Positive integer |
-| `ADGUARD_MAX_LEAK_TOLERANCE` | Number of leak detections before termination (0 = immediate) | `0` | Positive integer |
+| `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` | Kill switch check interval when `ADGUARD_CONNECTION_TYPE=SOCKS`; leave unset or empty to inherit `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | _(empty)_ | Positive integer or empty |
+| `ADGUARD_MAX_LEAK_TOLERANCE` | Number of leak detections before termination (0 = immediate) | `0` | Non-negative integer |
 | `ADGUARD_LEAK_WARNING_ONLY` | Only warn on leaks, do not terminate | `false` | `true` / `false` |
-| `ADGUARD_VPN_STARTUP_GRACE_SECONDS` | Seconds allowed for VPN tunnel to establish before supervisor treats not-connected as failure | `30` | Integer 0-600 |
+| `ADGUARD_VPN_STARTUP_GRACE_SECONDS` | Status-supervisor grace period when the kill switch is disabled (ignored when it is enabled) | `30` | Integer 0-600 |
 | **IP detection** | | | |
-| `ADGUARD_MAX_IP_DETECTION_RETRIES` | Maximum IP detection retry attempts | `3` | Positive integer |
-| `ADGUARD_IP_DETECTION_RETRY_DELAY` | Delay in seconds between IP detection retries | `10` | Positive integer |
+| `ADGUARD_MAX_IP_DETECTION_RETRIES` | Maximum retry attempts for each kill-switch public-IP check | `3` | Positive integer |
+| `ADGUARD_IP_DETECTION_RETRY_DELAY` | Delay in seconds between kill-switch public-IP retries | `10` | Positive integer |
 | **Persistent identity** | | | |
 | `ADGUARD_PERSISTENT_IDENTITY` | Persist and reapply the container primary-interface MAC across `docker compose up/down` (auth reset keeps the file; OAuth session is still cleared) | `false` | `true` / `false` |
 | **DNS** | | | |
@@ -227,7 +254,7 @@ This example follows the repository default and uses the `./data` bind mount. Co
 | `ADGUARD_SHOW_LOG` | Master switch for container log output (false = silent, except critical messages like OAuth URL) | `true` | `true` / `false` |
 | `ADGUARD_SHOW_LOG_LEVEL` | Container log level filter | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
 | `ADGUARD_SHOW_SUMMARY` | Show kill switch periodic summary in container logs | `true` | `true` / `false` |
-| `ADGUARD_MAX_WAIT_TIME` | Maximum wait time in seconds for the AdGuard VPN log file to appear | `60` | Positive integer |
+| `ADGUARD_MAX_WAIT_TIME` | Maximum wait time in seconds for the AdGuard VPN log file and, when enabled, kill-switch tunnel activation | `60` | Positive integer |
 | **Build-time only** _(not honored at runtime)_ | | | |
 | `PUID` | User ID for the container's app user (default avoids conflict with Ubuntu 24.04 built-in `ubuntu` user at 1000) | `1001` | Positive integer (build arg) |
 | `PGID` | Group ID for the container's app user | `1001` | Positive integer (build arg) |
@@ -237,6 +264,8 @@ This example follows the repository default and uses the `./data` bind mount. Co
 > - **SOCKS bind safety**: For non-localhost `ADGUARD_SOCKS5_HOST`, set `ADGUARD_SOCKS5_USERNAME` and `ADGUARD_SOCKS5_PASSWORD` to protect the proxy. `0.0.0.0` listens on all container interfaces — it is a bind address, not a destination. Change the host-side port publishing only when remote access is required, and configure authentication plus firewall rules first.
 > - **Deprecated auth variables**: `ADGUARD_USERNAME` and `ADGUARD_PASSWORD` are no longer used for authentication since version 1.5.10. Use the web-based OAuth device code flow instead.
 > - **`ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`**: A very short check interval is not recommended.
+> - **`ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL`**: Leave it unset or empty to inherit the global interval. A non-empty invalid value fails configuration validation at startup.
+> - **`ADGUARD_MAX_WAIT_TIME`**: This value limits the wait for the AdGuard VPN log file after connection and, when the kill switch is enabled, tunnel activation.
 > - **`ADGUARD_VPN_STARTUP_GRACE_SECONDS`**: Default 30. Set to `0` to restore the legacy immediate-check semantics. Bounded to 0-600.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -337,7 +366,7 @@ Please check the location and add the city, country or ISO code to `ADGUARD_CONN
 
 ## Persistent Container Identity
 
-`ADGUARD_PERSISTENT_IDENTITY` is an opt-in feature that reapplies the container's in-namespace primary-interface effective MAC across `docker compose up/down`. Without it, the interface MAC that Docker assigns at container creation can rotate on every recreate, which AdGuard's server-side fingerprinting may detect and require a browser re-authentication. Note that this only addresses the in-namespace MAC — Docker's per-endpoint MAC metadata (visible via `docker inspect`) is set at container creation and is not part of the guarantee; see [Verified scope](README.md#persistent-container-identity) below.
+`ADGUARD_PERSISTENT_IDENTITY` is an opt-in feature that reapplies the container's in-namespace primary-interface effective MAC across `docker compose up/down`. Without it, the interface MAC that Docker assigns at container creation can rotate on every recreate, which AdGuard's server-side fingerprinting may detect and require a browser re-authentication. Note that this only addresses the in-namespace MAC — Docker's per-endpoint MAC metadata (visible via `docker inspect`) is set at container creation and is not part of the guarantee; see [Verified scope](#verified-scope) below.
 
 ### Enabling
 
@@ -430,9 +459,9 @@ For the default bind mount, run `sudo chown -R 1001:1001 ./data`. Adjust the UID
 
 ### Kill switch terminates the container unexpectedly
 
-The kill switch monitors VPN status and terminates the container on IP leaks. Common causes:
+The kill switch monitors VPN status and terminates the container on IP leaks unless `ADGUARD_LEAK_WARNING_ONLY=true`. Common causes:
 
-- **Network instability**: DNS or HTTP IP-detection failures trigger termination. Increase `ADGUARD_MAX_IP_DETECTION_RETRIES` or `ADGUARD_IP_DETECTION_RETRY_DELAY` if you have an unreliable network.
+- **Network instability after startup**: HTTP IP-detection failures trigger termination after the configured retries. Increase `ADGUARD_MAX_IP_DETECTION_RETRIES` or `ADGUARD_IP_DETECTION_RETRY_DELAY` if you have an unreliable network. The pre-VPN baseline still requires three direct attempts before startup can continue.
 - **High latency connections**: The kill switch check interval (default 8s) may be too fast for some VPN endpoints. Increase `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`.
 - **False positive leak detection**: If the VPN IP and real IP share the same upstream, disable the kill switch (`ADGUARD_USE_KILL_SWITCH=false`).
 
@@ -440,7 +469,7 @@ The kill switch monitors VPN status and terminates the container on IP leaks. Co
 
 - Check the container logs: `docker compose logs`.
 - Common causes:
-  1. **Missing capabilities**: Ensure `--cap-add NET_ADMIN` and `/dev/net/tun` device are mapped.
+  1. **Missing TUN requirements**: For TUN mode, ensure `--cap-add NET_ADMIN` and `/dev/net/tun` are mapped. Plain SOCKS mode can run without the TUN device, unless persistent identity is enabled.
   2. **OAuth not completed**: First start requires browser authentication within the timeout.
   3. **Network not ready**: IP detection at startup may fail if the Docker bridge is not yet available.
   4. **Config validation error**: Check for `ADGUARD_*` environment variable syntax errors.
@@ -458,7 +487,7 @@ The kill switch monitors VPN status and terminates the container on IP leaks. Co
 
 - **1080**: SOCKS5 proxy port (when `ADGUARD_CONNECTION_TYPE=SOCKS`).
 - **6089**: AdGuard VPN CLI internal API / DNS proxy port. Used for DNS filtering features.
-- **6881 (TCP+UDP)**: BitTorrent DHT / peer port. Included for qBittorrent integration in the compose example. Bind to localhost on the host side if not using BitTorrent: `127.0.0.1:6881:6881`.
+- **6881 (TCP+UDP)**: BitTorrent DHT / peer port. It is added only in the qBittorrent example, not in the repository's default Compose file. Bind to localhost on the host side if you do not need remote peers: `127.0.0.1:6881:6881`.
 
 ### Updating
 
@@ -478,17 +507,22 @@ To confirm the VPN tunnel is active and your traffic is routed through it:
    ```bash
    docker compose exec adguard-vpn-cli adguardvpn-cli status
    ```
-   Look for `Connected` in the output.
+   In TUN mode, look for `Connected`. In SOCKS mode, the CLI can report `Disconnected` after startup even while the listener is healthy, so use the SOCKS healthcheck below as the authoritative check.
 
-2. **Compare public IP with and without the VPN**:
+2. **Check the public IP through the selected path**:
    ```bash
-   # From inside the container (through the VPN)
-   docker compose exec adguard-vpn-cli curl -4 -s ifconfig.me
+   # TUN mode: the container's normal network path should use the VPN
+   docker compose exec adguard-vpn-cli curl -4 -fsS https://checkip.amazonaws.com
 
-   # From the host directly (without the VPN)
-   curl -4 -s ifconfig.me
+   # SOCKS mode: use the configured proxy explicitly (default port shown)
+   docker compose exec adguard-vpn-cli curl -4 -fsS \
+       --proxy socks5h://127.0.0.1:1080 https://checkip.amazonaws.com
    ```
-   The two IPs should differ — matching output means the VPN tunnel is not routing traffic.
+   The SOCKS command assumes no proxy authentication. If authentication is enabled, use the container healthcheck instead so credentials stay out of the process command line:
+   ```bash
+   docker compose exec adguard-vpn-cli /opt/adguardvpn_cli/scripts/healthcheck.sh
+   ```
+   When the raw IP command is used, compare its result with a direct host request (`curl -4 -fsS https://checkip.amazonaws.com`). The VPN path should return a different address. With proxy authentication enabled, a successful healthcheck confirms egress; use a credential-aware local probe if you also need the exact IP.
 
 3. **Verify kill switch behavior**:
    ```bash
@@ -506,10 +540,10 @@ When `ADGUARD_CONNECTION_TYPE=SOCKS`, the kill switch probes the public IP throu
 - `ifconfig` — `https://ifconfig.co/ip`
 - `ident` — `https://ident.me`
 
-The first call picks a working service in fixed order, locks to it for the lifetime of the kill switch process, and re-discovers only when that service fails. The kill switch monitoring path (`ks_detect_ip_consistent`) always uses HTTP for both TUN and SOCKS modes — DNS would bypass the proxy in SOCKS mode and can return a different IP than tunneled HTTP traffic in TUN mode, so DNS is reserved for the one-shot initial IP discovery (`get_public_ip`) which has a separate, larger pool of four DNS resolvers.
+The first call picks a working service in fixed order and locks to it for the lifetime of the kill-switch process. If that service fails, the lock is cleared and the next attempt re-discovers a working service. The monitoring path (`ks_detect_ip_consistent`) always uses HTTP for both TUN and SOCKS modes. TUN startup discovery (`get_public_ip`) may use four DNS resolvers plus HTTP; SOCKS startup discovery (`get_public_ip_direct`) uses direct HTTP only so the pre-VPN baseline bypasses the proxy.
 
 > [!IMPORTANT]
-> In SOCKS mode the kill switch treats the proxy as down whenever all five services are unreachable on a given check and **terminates the container** — it cannot distinguish a tunnel failure from a transient external outage. To reduce how often the kill switch calls out, raise `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` (for example, `15` or `30`). Unset or invalid values fall back to `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`.
+> In SOCKS mode the kill switch treats the proxy as down when the listener is unavailable or all five services remain unreachable through the configured retry attempts, then **terminates the container**. It cannot distinguish a tunnel failure from a transient external outage. To reduce how often the kill switch calls out, raise `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` (for example, `15` or `30`). Leave the value unset or empty to inherit `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`; a non-empty invalid value is rejected during configuration validation.
 
 <!-- SECURITY CONSIDERATIONS -->
 
@@ -519,19 +553,19 @@ The first call picks a working service in fixed order, locks to it for the lifet
 
 The Dockerfile grants `appuser` passwordless sudo (`NOPASSWD:ALL`). This is required by `adguardvpn-cli` for TUN interface setup in containers. While this is standard practice for single-purpose containers where `NET_ADMIN` is already granted, be aware that any process running inside the container has effective root-equivalent access.
 
-### curl | sh installation pattern
+### Upstream installer execution
 
-The Dockerfile fetches and executes an upstream install script directly from GitHub. This is inherent to the current AdGuard VPN CLI distribution model. Mitigations include:
+The Dockerfile downloads and executes the upstream install script from a GitHub release. This is inherent to the current AdGuard VPN CLI distribution model. The image build verifies the script before execution. Mitigations include:
 
 - SHA256 computation and logging of both `install.sh` and the installed binary for audit trail.
 - Fail-closed verification against the GitHub Release API's `install.sh` asset digest. The build fails when the digest is unavailable or mismatched.
-- Validation of the GitHub API release tag against a semver pattern (`^vX.Y.Z`) to catch anomalous responses.
+- Validation of the GitHub API release tag against `vX.Y.Z` with an optional prerelease suffix to catch anomalous responses.
 
 ### Exposed ports in production
 
 The default `docker-compose.yml` binds `1080` and `6089` to localhost only. If remote access is required, change the host-side binding explicitly and configure SOCKS5 authentication and firewall restrictions before deployment.
 
-Do **not** expose port `6089` to the public internet — it is an internal API and DNS proxy port used by AdGuard VPN CLI for DNS filtering configuration and health checking.
+Do **not** expose port `6089` to the public internet — it is an internal API and DNS proxy port used by AdGuard VPN CLI for DNS filtering configuration.
 
 ### Build context sensitivity
 

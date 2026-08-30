@@ -54,11 +54,11 @@ _config_define_schema() {
     #       defaults as trivially guessable credentials.
     _config_add "ADGUARD_SOCKS5_USERNAME" \
         "string" "" \
-        "SOCKS5 proxy username (required when SOCKS connection type is selected)"
+        "SOCKS5 proxy username (optional on localhost; set with a password before exposing the proxy)"
 
     _config_add "ADGUARD_SOCKS5_PASSWORD" \
         "string" "" \
-        "SOCKS5 proxy password (required when SOCKS connection type is selected)"
+        "SOCKS5 proxy password (optional on localhost; set with a username before exposing the proxy)"
 
     _config_add "ADGUARD_SOCKS5_HOST" \
         "ip" "127.0.0.1" \
@@ -71,7 +71,7 @@ _config_define_schema() {
     # ---------- Kill switch ----------
     _config_add "ADGUARD_USE_KILL_SWITCH" \
         "bool" "true" \
-        "Enable kill switch to prevent IP leaks when VPN drops"
+        "Enable kill-switch IP/leak monitoring; when false, use the status supervisor instead"
 
     _config_add "ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL" \
         "positive_int" "8" \
@@ -92,11 +92,11 @@ _config_define_schema() {
 
     _config_add "ADGUARD_MAX_IP_DETECTION_RETRIES" \
         "positive_int" "3" \
-        "Maximum IP detection retry attempts"
+        "Maximum retry attempts for each kill-switch public-IP check"
 
     _config_add "ADGUARD_IP_DETECTION_RETRY_DELAY" \
         "positive_int" "10" \
-        "Delay in seconds between IP detection retries"
+        "Delay in seconds between kill-switch public-IP retries"
 
     # ---------- DNS ----------
     _config_add "ADGUARD_USE_CUSTOM_DNS" \
@@ -175,7 +175,7 @@ _config_define_schema() {
 
     _config_add "ADGUARD_MAX_WAIT_TIME" \
         "positive_int" "60" \
-        "Maximum wait time in seconds for the AdGuard VPN log file to appear"
+        "Maximum wait time in seconds for the AdGuard VPN log file and, when enabled, kill-switch tunnel activation"
 
     _config_add "ADGUARD_VPN_STARTUP_GRACE_SECONDS" \
         "bounded_int" "30" \
