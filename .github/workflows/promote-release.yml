@@ -201,6 +201,17 @@ jobs:
                     **Promoted from:** ${{ inputs.existing_tag }}
 
                     This stable release corresponds to the previously published pre-release.
+
+                    ### ⚠️ Behavioral changes since the pre-release
+
+                    In SOCKS mode, the kill switch now probes the public IP through
+                    the SOCKS5 proxy on every check (same policy as TUN mode).
+                    If all five discovery services (`aws`, `ipify`, `ipinfo`,
+                    `ifconfig`, `ident`) are unreachable, the container is
+                    terminated — the kill switch cannot distinguish a tunnel
+                    failure from a temporary external service outage. To reduce
+                    external call frequency, set
+                    `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL`.
                   prerelease: false
                   make_latest: true
               env:
