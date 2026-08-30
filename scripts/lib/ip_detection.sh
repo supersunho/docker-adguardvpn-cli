@@ -20,7 +20,7 @@
 _IP_DNS_METHODS=("opendns" "google" "cloudflare1001" "cloudflare1111")
 
 # Ordered list of HTTP-based discovery service IDs.
-_IP_HTTP_SERVICES=("aws" "ipify" "ipinfo")
+_IP_HTTP_SERVICES=("aws" "ipify" "ipinfo" "ifconfig" "ident")
 
 # Detection tracking (set by _ip_detect_* functions, consumed by caller)
 _IP_LAST_DNS_ID=""
@@ -68,9 +68,11 @@ _ip_run_http_method() {
 
     local url=""
     case "$id" in
-        aws)    url="https://checkip.amazonaws.com" ;;
-        ipify)  url="https://api.ipify.org" ;;
-        ipinfo) url="https://ipinfo.io/ip" ;;
+        aws)      url="https://checkip.amazonaws.com" ;;
+        ipify)    url="https://api.ipify.org" ;;
+        ipinfo)   url="https://ipinfo.io/ip" ;;
+        ifconfig) url="https://ifconfig.co/ip" ;;
+        ident)    url="https://ident.me" ;;
         *) return 1 ;;
     esac
 

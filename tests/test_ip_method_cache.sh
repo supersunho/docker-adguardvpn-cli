@@ -305,6 +305,61 @@ test_no_command_execution_from_cache() {
 }
 
 # =============================================================================
+# Test 11: Newly added HTTP IDs are registered and round-trip via the cache
+# =============================================================================
+
+test_new_http_ids_registered() {
+    local src="${PROJECT_DIR}/scripts/lib/ip_detection.sh"
+
+    # _IP_HTTP_SERVICES must include the new IDs.
+    if grep -q '"ifconfig"' "$src" && grep -q '"ident"' "$src"; then
+        echo "  PASS: _IP_HTTP_SERVICES includes ifconfig and ident"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: _IP_HTTP_SERVICES missing new IDs"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # _ip_run_http_method case branches must map them to allowlisted URLs.
+    if grep -q 'ifconfig\.co/ip' "$src" && grep -q 'ident\.me' "$src"; then
+        echo "  PASS: dispatch case branches map new IDs to allowlisted URLs"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: dispatch case branches do not map new IDs"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+test_new_http_ids_round_trip_via_cache() {
+    local cache="${HOME}/.local/share/adguardvpn-cli/ip_method.txt"
+    rm -f "$cache"
+
+    # Pair with a known DNS ID so the save/load parser has both fields
+    # well-defined; this matches the real call sites (get_public_ip only
+    # saves both IDs when both DNS and HTTP succeeded).
+    _ip_save_methods "opendns" "ifconfig"
+    read -r _dns _http <<< "$(_ip_load_methods)"
+
+    if [ "$_http" = "ifconfig" ] && [ "$_dns" = "opendns" ]; then
+        echo "  PASS: ifconfig survives v1|http| save/load round-trip"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: ifconfig round-trip got dns='${_dns}' http='${_http}'"
+        FAIL=$((FAIL + 1))
+    fi
+
+    _ip_save_methods "opendns" "ident"
+    read -r _dns _http <<< "$(_ip_load_methods)"
+    if [ "$_http" = "ident" ] && [ "$_dns" = "opendns" ]; then
+        echo "  PASS: ident survives v1|http| save/load round-trip"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: ident round-trip got dns='${_dns}' http='${_http}'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -334,6 +389,10 @@ echo ""
 test_atomic_write_pattern
 echo ""
 test_no_command_execution_from_cache
+echo ""
+test_new_http_ids_registered
+echo ""
+test_new_http_ids_round_trip_via_cache
 echo ""
 
 echo "=========================================="
