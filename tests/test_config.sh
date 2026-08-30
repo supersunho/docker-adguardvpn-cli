@@ -187,6 +187,107 @@ test_startup_grace_rejects_out_of_range() {
     unset ADGUARD_VPN_STARTUP_GRACE_SECONDS
 }
 
+# =============================================================================
+# Optional keys: config_export_defaults / config_normalize / config_validate
+# must leave an unset optional variable genuinely unset, and a non-empty
+# value must be validated and exported normally. This is the regression that
+# keeps ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL able to inherit
+# ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL through process boundaries.
+# =============================================================================
+
+test_optional_key_stays_unset_after_export_defaults() {
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+    config_export_defaults
+
+    # The variable must be empty (not "8") so a child process can detect
+    # the unset state and apply the global fallback.
+    if [ -z "${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL+x}" ]; then
+        assertTrue "ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL must stay unset" true
+    else
+        assertTrue "leaked default value: '${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL}'" false
+    fi
+}
+
+test_optional_key_stays_unset_after_normalize() {
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+    config_normalize
+
+    if [ -z "${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL+x}" ]; then
+        assertTrue "normalize must not export an unset optional key" true
+    else
+        assertTrue "normalize leaked: '${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL}'" false
+    fi
+}
+
+test_optional_key_validates_when_empty() {
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+    if config_validate; then
+        assertTrue "empty optional key must pass validation" true
+    else
+        assertTrue "empty optional key must NOT fail validation" false
+    fi
+}
+
+test_optional_key_validates_when_set() {
+    export ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL=15
+    if config_validate; then
+        assertTrue "non-empty optional key with valid value must pass" true
+    else
+        assertTrue "valid value 15 was rejected" false
+    fi
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+}
+
+test_optional_key_rejects_invalid_value() {
+    export ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL=abc
+    if config_validate; then
+        assertTrue "invalid value must fail" false
+    else
+        assertTrue "invalid value rejected" true
+    fi
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+}
+
+# Parent -> child inheritance simulation: this is the production failure
+# mode the review caught. With global=30, ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+# unset, and config_bootstrap run, a child process must see the variable
+# as unset so the kill switch detector applies its global fallback.
+test_optional_key_survives_parent_child_boundary() {
+    # Simulate the PID-1 -> kill switch child boundary.
+    # Parent runs config_bootstrap (as docker-entrypoint does); the child
+    # inherits the parent's environment and sources killswitch_detector.sh.
+    local child_effective_interval
+    child_effective_interval=$( \
+        ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=30 \
+        bash -c '
+            set +u
+            export HOME="${HOME:-/tmp}"
+            unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+            # Parent step: run the same bootstrap the entrypoint runs.
+            source "'"${PROJECT_DIR}"'/scripts/lib/logging.sh" 2>/dev/null
+            source "'"${PROJECT_DIR}"'/scripts/lib/error_handling.sh" 2>/dev/null
+            source "'"${PROJECT_DIR}"'/scripts/lib/config.sh" 2>/dev/null
+            config_export_defaults >/dev/null 2>&1
+            config_normalize >/dev/null 2>&1
+            # Confirm the parent did not leak a default.
+            if [ -n "${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL+x}" ]; then
+                printf "LEAKED_%s" "${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL}"
+                exit 0
+            fi
+            # Child step: source the detector under the inherited env and
+            # read the resolved SOCKS interval. It should fall back to 30.
+            source "'"${PROJECT_DIR}"'/scripts/lib/network.sh" 2>/dev/null
+            source "'"${PROJECT_DIR}"'/scripts/lib/vpn_status.sh" 2>/dev/null
+            source "'"${PROJECT_DIR}"'/scripts/lib/killswitch_detector.sh" 2>/dev/null
+            printf "%s" "${KS_SOCKS_CHECK_INTERVAL}"
+        ')
+
+    assertEquals "child must resolve SOCKS interval from global (30)" \
+        "30" "$child_effective_interval"
+    unset ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL
+    unset ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL
+}
+
 SHUNIT2="${SCRIPT_DIR}/lib/shunit2"
 if [ ! -f "$SHUNIT2" ]; then
     mkdir -p "${SCRIPT_DIR}/lib"
