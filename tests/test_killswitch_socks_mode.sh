@@ -428,24 +428,67 @@ test_socks_linux_parser_reads_proc_entries() {
 # each case re-sources the module inside a subshell to exercise the env-var
 # branch independently. The subshell loads the same dependency modules as
 # the test harness so the resolution matches runtime behaviour.
+# The override is passed via env(1) rather than interpolated into the script
+# body so that an empty value is faithfully represented as "unset" instead of
+# being captured at function-definition time (which would leak across calls).
 _run_interval_probe() {
     # Function argument: 1=$env_override_value ("" means unset)
     local override="$1"
-    local script="
-        set +u
-        export ADGUARD_SHOW_LOG=false
-        export ADGUARD_SHOW_LOG_LEVEL=ERROR
-        export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=8
-        ${override+export ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL='${override}'}
-        source '${PROJECT_DIR}/scripts/lib/logging.sh' 2>/dev/null
-        source '${PROJECT_DIR}/scripts/lib/error_handling.sh' 2>/dev/null
-        source '${PROJECT_DIR}/scripts/lib/config.sh' 2>/dev/null
-        source '${PROJECT_DIR}/scripts/lib/network.sh' 2>/dev/null
-        source '${PROJECT_DIR}/scripts/lib/vpn_status.sh' 2>/dev/null
-        source '${PROJECT_DIR}/scripts/lib/killswitch_detector.sh' 2>/dev/null
-        printf '%s' \"\${KS_SOCKS_CHECK_INTERVAL-unset}\"
-    "
-    bash -c "$script"
+    # Two paths: explicit env-var assignment (covers "30", "abc", etc.),
+    # or no assignment at all (covers the unset/empty cases). Passing the
+    # empty string via env would set the variable to empty, which the
+    # detector treats identically to unset thanks to ${VAR:-fallback}.
+    if [ -n "$override" ]; then
+        # shellcheck disable=SC2016  # the following script body uses single-quote/double-quote sandwiching
+        env -i \
+            PATH="/opt/homebrew/bin:/usr/bin:/bin" \
+            HOME="$HOME" \
+            ADGUARD_SHOW_LOG=false \
+            ADGUARD_SHOW_LOG_LEVEL=ERROR \
+            ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=8 \
+            ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL="$override" \
+            bash -c '
+                # The PROJECT_DIR substitution is intentional: single-quote
+                # sandwiching the variable so the subshell sees a concrete
+                # path, not a literal ${PROJECT_DIR}.
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/logging.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/error_handling.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/config.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/network.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/vpn_status.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/killswitch_detector.sh"
+                printf "%s" "${KS_SOCKS_CHECK_INTERVAL-unset}"
+            '
+    else
+        # shellcheck disable=SC2016  # see comment in the if-branch above
+        env -i \
+            PATH="/opt/homebrew/bin:/usr/bin:/bin" \
+            HOME="$HOME" \
+            ADGUARD_SHOW_LOG=false \
+            ADGUARD_SHOW_LOG_LEVEL=ERROR \
+            ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=8 \
+            bash -c '
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/logging.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/error_handling.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/config.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/network.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/vpn_status.sh"
+                # shellcheck disable=SC2016
+                source "'"${PROJECT_DIR}"'/scripts/lib/killswitch_detector.sh"
+                printf "%s" "${KS_SOCKS_CHECK_INTERVAL-unset}"
+            '
+    fi
 }
 
 test_socks_check_interval_defaults_to_global() {
