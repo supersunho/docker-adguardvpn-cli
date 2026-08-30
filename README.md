@@ -137,9 +137,9 @@ services:
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qEi '(^|[^[:alpha:]])Connected([^[:alpha:]]|$)' || exit 1"]
+            test: ["CMD", "/opt/adguardvpn_cli/scripts/healthcheck.sh"]
             interval: 1m
-            timeout: 10s
+            timeout: 15s
             retries: 5
             start_period: 5m
         cap_add:

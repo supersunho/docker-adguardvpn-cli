@@ -12,7 +12,11 @@
 # Library loader
 # =============================================================================
 
-_LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
+_UTILS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_LIB_DIR="${_UTILS_DIR}/lib"
+if [ ! -d "$_LIB_DIR" ]; then
+    _LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
+fi
 
 # Source each module in dependency order.
 # logging.sh must come first since other modules use log().
@@ -41,7 +45,7 @@ for _module in \
     fi
 done
 
-unset _module _path _LIB_DIR
+unset _module _path _UTILS_DIR _LIB_DIR
 
 # =============================================================================
 # Legacy compatibility — no-op

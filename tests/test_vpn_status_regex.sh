@@ -139,38 +139,17 @@ assert_nocasematch_preserved_for "nocasematch initially set"   "set"
 assert_nocasematch_preserved_for "nocasematch initially unset" "unset"
 
 echo ""
-echo "== docker-compose.yml healthcheck grep matches function =="
-## The compose healthcheck regex must agree with the function.  We re-derive
-## the compose line (after YAML single-escape: \\b -> \b) and run the same
-## `adguardvpn-cli status` stub through it.  Pattern uses POSIX ERE so it
-## works identically in bash [[ =~ ]] and grep -E.
-COMPOSE_REGEX='(^|[^[:alpha:]])Connected([^[:alpha:]]|$)'
-
-compose_check() {
-    local status_line="$1"
-    local expected="$2"
-    total=$((total + 1))
-    if PATH="${STUB_BIN}:${PATH}" \
-       ADGUARD_TEST_STATUS="$status_line" \
-       bash -c "adguardvpn-cli status 2>&1 | grep -qEi '${COMPOSE_REGEX}'"; then
-        actual=0
-    else
-        actual=1
-    fi
-    if [ "$actual" = "$expected" ]; then
-        printf '  PASS: compose %-42s status=%q expected=%s\n' "" "$status_line" "$expected"
-    else
-        printf '  FAIL: compose %-42s status=%q expected=%s got=%s\n' "" "$status_line" "$expected" "$actual"
-        failures=$((failures + 1))
-    fi
-}
-
-compose_check "Connected in tun mode"   0
-compose_check "Connected"              0
-compose_check "Disconnected"           1
-compose_check ""                       1
-compose_check "VPN Connected"          0
-compose_check "Disconnected in mode"   1
+echo "== docker-compose.yml uses the shared healthcheck helper =="
+total=$((total + 1))
+if grep -q '/opt/adguardvpn_cli/scripts/healthcheck.sh' \
+       "${PROJECT_DIR}/docker-compose.yml" && \
+   grep -q 'healthcheck_main' "${PROJECT_DIR}/scripts/healthcheck.sh" && \
+   grep -q 'ks_socks_port_listening' "${PROJECT_DIR}/scripts/healthcheck.sh"; then
+    echo "  PASS: Compose uses the mode-aware healthcheck helper"
+else
+    echo "  FAIL: Compose does not use the mode-aware healthcheck helper"
+    failures=$((failures + 1))
+fi
 
 echo ""
 echo "=========================================="
