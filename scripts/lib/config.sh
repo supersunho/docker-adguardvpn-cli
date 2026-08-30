@@ -79,7 +79,8 @@ _config_define_schema() {
 
     _config_add "ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL" \
         "positive_int" "8" \
-        "Kill switch check interval in seconds when ADGUARD_CONNECTION_TYPE=SOCKS (inherits ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL by leaving the variable unset)"
+        "Kill switch check interval in seconds when ADGUARD_CONNECTION_TYPE=SOCKS (leave unset to inherit ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL)" \
+        "" "true"
 
     _config_add "ADGUARD_MAX_LEAK_TOLERANCE" \
         "non_negative_int" "0" \
@@ -188,16 +189,20 @@ declare -A _CONFIG_TYPE
 declare -A _CONFIG_DEFAULT
 declare -A _CONFIG_DESC
 declare -A _CONFIG_ENUM
+declare -A _CONFIG_OPTIONAL
 _CONFIG_KEYS=()
 
 _config_add() {
-    local key="$1" type="$2" default="$3" desc="$4" enum="${5:-}"
+    local key="$1" type="$2" default="$3" desc="$4" enum="${5:-}" optional="${6:-false}"
     _CONFIG_KEYS+=("$key")
     _CONFIG_TYPE["$key"]="$type"
     _CONFIG_DEFAULT["$key"]="$default"
     _CONFIG_DESC["$key"]="$desc"
     if [ -n "$enum" ]; then
         _CONFIG_ENUM["$key"]="$enum"
+    fi
+    if [ "$optional" = "true" ]; then
+        _CONFIG_OPTIONAL["$key"]=1
     fi
 }
 
@@ -210,10 +215,19 @@ fi
 # ---- Public: config_export_defaults -----------------------------------------
 
 # Export every variable with its default if not already set.
+# Optional keys (see _config_add's 6th argument) are skipped when unset so
+# the value can be inherited from a parent process or stay genuinely unset
+# for downstream fallback logic.
 config_export_defaults() {
     local key
     for key in "${_CONFIG_KEYS[@]}"; do
         if [ -z "${!key:-}" ]; then
+            if [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+                # Leave the variable unset on purpose. The unset state is
+                # meaningful: it lets consumers (e.g. the kill switch
+                # detector) fall back to a different source.
+                continue
+            fi
             export "${key}=${_CONFIG_DEFAULT[$key]}"
         fi
     done
@@ -229,6 +243,14 @@ config_normalize() {
 
     for key in "${_CONFIG_KEYS[@]}"; do
         val="${!key:-}"
+
+        # Optional keys: if unset, leave the variable unset so consumers
+        # can apply their own fallback semantics. Validation is also
+        # skipped for the empty case.
+        if [ -z "$val" ] && [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            continue
+        fi
+
         [ -z "$val" ] && val="${_CONFIG_DEFAULT[$key]}"
 
         case "${_CONFIG_TYPE[$key]}" in
@@ -269,6 +291,14 @@ config_validate() {
 
     for key in "${_CONFIG_KEYS[@]}"; do
         val="${!key:-}"
+
+        # Optional keys: skip validation entirely when the value is
+        # empty so an unset SOCKS_CHECK_INTERVAL (intended to inherit
+        # the global interval) does not fail the bootstrap.
+        if [ -z "$val" ] && [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            continue
+        fi
+
         [ -z "$val" ] && val="${_CONFIG_DEFAULT[$key]}"
 
         case "${_CONFIG_TYPE[$key]}" in
@@ -362,18 +392,27 @@ config_get() {
 
 # Print a .env file (key=value with comments) based on the schema.
 config_generate_dotenv() {
-    local key desc line last_key
+    local key desc line last_key rendered_default
     local prev_category=""
     last_key="${_CONFIG_KEYS[${#_CONFIG_KEYS[@]} - 1]}"
 
     for key in "${_CONFIG_KEYS[@]}"; do
         desc="${_CONFIG_DESC[$key]}"
 
+        # Optional keys print an empty value so the resulting .env leaves
+        # the variable unset and the consumer can fall back to the parent
+        # (e.g. SOCKS check interval inheriting the global one).
+        if [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            rendered_default=""
+        else
+            rendered_default="${_CONFIG_DEFAULT[$key]}"
+        fi
+
         # Insert a blank line + category comment on category transitions
         # (derived from the first word of the description when it changes
         #  pattern; this is a simple heuristic.)
         echo "# ${desc}"
-        echo "${key}=${_CONFIG_DEFAULT[$key]}"
+        echo "${key}=${rendered_default}"
         if [ "$key" != "$last_key" ]; then
             echo ""
         fi

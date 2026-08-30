@@ -203,7 +203,7 @@ This example follows the repository default and uses the `./data` bind mount. Co
 | **Kill switch** | | | |
 | `ADGUARD_USE_KILL_SWITCH` | Enable kill switch to prevent IP leaks when VPN drops | `true` | `true` / `false` |
 | `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | Kill switch check interval in seconds | `8` | Positive integer |
-| `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` | Kill switch check interval when `ADGUARD_CONNECTION_TYPE=SOCKS` (unset = same as `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`) | _(empty)_ | Positive integer |
+| `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` | Kill switch check interval when `ADGUARD_CONNECTION_TYPE=SOCKS`; leave unset or empty to inherit `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | _(empty)_ | Positive integer |
 | `ADGUARD_MAX_LEAK_TOLERANCE` | Number of leak detections before termination (0 = immediate) | `0` | Positive integer |
 | `ADGUARD_LEAK_WARNING_ONLY` | Only warn on leaks, do not terminate | `false` | `true` / `false` |
 | `ADGUARD_VPN_STARTUP_GRACE_SECONDS` | Seconds allowed for VPN tunnel to establish before supervisor treats not-connected as failure | `30` | Integer 0-600 |
