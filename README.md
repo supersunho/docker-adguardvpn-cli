@@ -506,7 +506,7 @@ When `ADGUARD_CONNECTION_TYPE=SOCKS`, the kill switch probes the public IP throu
 - `ifconfig` — `https://ifconfig.co/ip`
 - `ident` — `https://ident.me`
 
-The first call picks a working service in fixed order, locks to it for the lifetime of the kill switch process, and re-discovers only when that service fails. In TUN mode, four DNS-based methods are also available, so the TUN pool is larger (DNS is intentionally skipped in SOCKS mode because DNS would bypass the proxy).
+The first call picks a working service in fixed order, locks to it for the lifetime of the kill switch process, and re-discovers only when that service fails. The kill switch monitoring path (`ks_detect_ip_consistent`) always uses HTTP for both TUN and SOCKS modes — DNS would bypass the proxy in SOCKS mode and can return a different IP than tunneled HTTP traffic in TUN mode, so DNS is reserved for the one-shot initial IP discovery (`get_public_ip`) which has a separate, larger pool of four DNS resolvers.
 
 > [!IMPORTANT]
 > In SOCKS mode the kill switch treats the proxy as down whenever all five services are unreachable on a given check and **terminates the container** — it cannot distinguish a tunnel failure from a transient external outage. To reduce how often the kill switch calls out, raise `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` (for example, `15` or `30`). Unset or invalid values fall back to `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`.
