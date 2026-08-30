@@ -390,9 +390,31 @@ EOF
     fi
     rm -rf "$SHIM_DIR"
 }
+
+# ---- Test 10: Linux parser reads real /proc-style listener entries ---------
+test_socks_linux_parser_reads_proc_entries() {
+    export ADGUARD_SOCKS5_PORT=19471
+    _ks_restore_real_dispatcher
+    local fake_proc_dir
+    fake_proc_dir=$(mktemp -d)
+    printf '  0: 00000000:4C0F 00000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "${fake_proc_dir}/tcp"
+    printf '  0: 00000000000000000000000000000000:4C0F 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  0 0 0 0\n' > "${fake_proc_dir}/tcp6"
+
+    KS_PROC_NET_DIR="$fake_proc_dir"
+    if _ks_port_listening_linux "$ADGUARD_SOCKS5_PORT"; then
+        echo "  PASS: Linux SOCKS parser detects a LISTEN entry"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Linux SOCKS parser missed a LISTEN entry"
+        FAIL=$((FAIL + 1))
+    fi
+    unset KS_PROC_NET_DIR
+    rm -rf "$fake_proc_dir"
+}
 test_socks_dispatcher_routes_to_darwin
 test_socks_darwin_uses_lsof
 test_socks_dispatcher_unsupported_os_fails_closed
+test_socks_linux_parser_reads_proc_entries
 test_socks_wait_returns_on_connected
 test_socks_wait_fallback_initializes_vpn_ip
 test_killswitch_loop_continues_after_socks_check

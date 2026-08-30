@@ -264,11 +264,12 @@ ks_socks_port_listening() {
 # Linux implementation: parse /proc/net/tcp and /proc/net/tcp6 for state 0A (LISTEN).
 _ks_port_listening_linux() {
     local port="$1"
+    local proc_net_dir="${KS_PROC_NET_DIR:-/proc/net}"
     local hex_port
     hex_port=$(printf '%04X' "$port")
     awk -v want="$hex_port" \
         '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
-        /proc/net/tcp /proc/net/tcp6 2>/dev/null
+        "${proc_net_dir}/tcp" "${proc_net_dir}/tcp6" 2>/dev/null
 }
 
 # Darwin (macOS) implementation: use lsof to find a LISTEN socket on the port.
