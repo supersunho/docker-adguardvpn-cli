@@ -20,17 +20,15 @@ check_adguard_vpn_status() {
     status=$(adguardvpn-cli status 2>/dev/null) || true
 
     ## Word-boundary match via POSIX character classes (avoids GNU-only \b).
-    ## Case-insensitive to tolerate localized output ("connected", "CONNECTED").
-    local _re='(^|[^[:alpha:]])Connected([^[:alpha:]]|$)'
-    local _was_nocasematch
-    case "$-" in *"i"*) _was_nocasematch="set";; *) _was_nocasematch="unset";; esac
-    shopt -s nocasematch
-    if [[ $status =~ $_re ]]; then
-        shopt -u nocasematch 2>/dev/null || true
+    ## Normalize the status before matching so the caller's `nocasematch`
+    ## shell option is not changed as a side effect.
+    local _re='(^|[^[:alpha:]])connected([^[:alpha:]]|$)'
+    local status_lower
+    status_lower=$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')
+    if [[ $status_lower =~ $_re ]]; then
         log DEBUG "VPN is connected"
         return 0
     fi
-    shopt -u nocasematch 2>/dev/null || true
 
     log DEBUG "VPN is not connected"
     return 1

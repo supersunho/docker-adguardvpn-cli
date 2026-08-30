@@ -102,6 +102,43 @@ assert_vpn_connected_for "error line"             "Error: not logged in"        
 assert_vpn_connected_for "subword Connection"     "Connection refused"             1
 
 echo ""
+echo "== check_adguard_vpn_status() -- preserve caller nocasematch option =="
+assert_nocasematch_preserved_for() {
+    local label="$1"
+    local expected_state="$2"
+    local actual_state
+    local result=0
+
+    total=$((total + 1))
+    if [ "$expected_state" = "set" ]; then
+        shopt -s nocasematch
+    else
+        shopt -u nocasematch
+    fi
+
+    PATH="${STUB_BIN}:${PATH}" \
+       ADGUARD_TEST_STATUS="CONNECTED" \
+       check_adguard_vpn_status >/dev/null 2>&1 || result=$?
+
+    if shopt -q nocasematch; then
+        actual_state="set"
+    else
+        actual_state="unset"
+    fi
+
+    if [ "$result" -eq 0 ] && [ "$actual_state" = "$expected_state" ]; then
+        printf '  PASS: %-50s expected=%s\n' "$label" "$expected_state"
+    else
+        printf '  FAIL: %-50s expected=%s got=%s (return=%s)\n' \
+            "$label" "$expected_state" "$actual_state" "$result"
+        failures=$((failures + 1))
+    fi
+}
+
+assert_nocasematch_preserved_for "nocasematch initially set"   "set"
+assert_nocasematch_preserved_for "nocasematch initially unset" "unset"
+
+echo ""
 echo "== docker-compose.yml healthcheck grep matches function =="
 ## The compose healthcheck regex must agree with the function.  We re-derive
 ## the compose line (after YAML single-escape: \\b -> \b) and run the same
