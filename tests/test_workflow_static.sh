@@ -268,6 +268,28 @@ test_promotion_requires_matching_version_base() {
 }
 
 # =============================================================================
+# Test 14: Compose configuration validation gates the image build
+# =============================================================================
+
+test_compose_config_is_build_gate() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local unit_tests_block
+    unit_tests_block=$(sed -n '/^    unit-tests:/,/^    [a-z-]*:/p' "$workflow")
+
+    if [ -z "$unit_tests_block" ] || \
+       ! grep -q 'docker compose --env-file \.env\.example -f docker-compose\.yml config --quiet' <<< "$unit_tests_block"; then
+        echo "  FAIL: Unit-test build gate does not validate Compose configuration"
+        FAIL=$((FAIL + 1))
+    elif ! grep -q 'needs: \[prepare, shellcheck, unit-tests, actionlint\]' "$workflow"; then
+        echo "  FAIL: Build job is not gated on the unit-tests job"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: Compose configuration validation runs in the build gate"
+        PASS=$((PASS + 1))
+    fi
+}
+
+# =============================================================================
 # Test 3: Version validation exists
 # =============================================================================
 
@@ -354,6 +376,8 @@ echo ""
 test_promotion_workflow_uses_safe_inputs
 echo ""
 test_promotion_requires_matching_version_base
+echo ""
+test_compose_config_is_build_gate
 echo ""
 
 echo "=========================================="

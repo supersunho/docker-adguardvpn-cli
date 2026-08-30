@@ -259,6 +259,18 @@ jobs:
               run: |
                   cd tests && bash run_tests.sh unit
 
+            - name: 🧩 Validate Compose configuration
+              run: |
+                  compose_check_dir=$(mktemp -d)
+                  trap 'rm -rf "$compose_check_dir"' EXIT
+                  cp docker-compose.yml "$compose_check_dir/docker-compose.yml"
+                  cp .env.example "$compose_check_dir/.env.example"
+                  cp .env.example "$compose_check_dir/.env"
+                  (
+                    cd "$compose_check_dir"
+                    docker compose --env-file .env.example -f docker-compose.yml config --quiet
+                  )
+
     actionlint:
         needs: prepare
         runs-on: ubuntu-latest
