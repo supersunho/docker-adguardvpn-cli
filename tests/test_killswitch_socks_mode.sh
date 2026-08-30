@@ -9,6 +9,9 @@
 # confirm the SOCKS wait and egress paths.
 
 set -euo pipefail
+# The test replaces sourced functions with local stubs that are invoked
+# indirectly by detector functions; ShellCheck cannot see those call paths.
+# shellcheck disable=SC2329
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -44,6 +47,8 @@ test_socks_wait_returns_on_connected() {
     KS_VPN_IP=""
     # KS_MAX_WAIT_TIME is readonly (60 by default) -- use it directly
     # Stub: IP detection would otherwise block / fail
+    # shellcheck disable=SC2329
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 0; }
     ks_detect_ip_consistent() { echo "ERROR"; return 1; }
 
@@ -73,6 +78,8 @@ test_socks_wait_fallback_initializes_vpn_ip() {
 
     # A steady-state SOCKS tunnel can report Disconnected while its connected
     # log entry and listener still prove that it is active.
+    # shellcheck disable=SC2329
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 1; }
     ks_tunnel_connected_in_log() { return 0; }
     ks_socks_port_listening() { return 0; }
@@ -114,6 +121,7 @@ test_socks_detect_returns_on_connected() {
     start_ts=$(date +%s)
 
     # Stub: adguardvpn-cli status returns Connected and the SOCKS listener exists.
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 0; }
     ks_socks_port_listening() { return 0; }
     # A successful response must come from the proxy path.
@@ -148,6 +156,7 @@ test_socks_detect_fails_on_disconnected() {
     KS_CURRENT_IP=""
 
     # Status may be unstable in SOCKS steady state, but the listener exists.
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 1; }
     ks_socks_port_listening() { return 0; }
     # A failed proxy probe must fail closed.
@@ -170,6 +179,7 @@ test_socks_detect_surfaces_direct_ip_leak() {
     KS_VPN_IP="198.51.100.20"
     KS_CURRENT_IP=""
 
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 0; }
     ks_socks_port_listening() { return 0; }
     # Simulate a proxy path that has fallen back to the host's real egress.
@@ -193,6 +203,7 @@ test_tun_detect_still_uses_ip() {
     KS_CURRENT_IP=""
 
     local ip_detect_called=0
+    # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 1; }
     IP_COUNTER_FILE="$(mktemp)"; ks_detect_ip_consistent() { echo 1 > "$IP_COUNTER_FILE"; echo "1.2.3.4"; return 0; }
     log() { :; }
