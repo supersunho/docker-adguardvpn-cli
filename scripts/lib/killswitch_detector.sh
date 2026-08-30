@@ -171,6 +171,9 @@ ks_wait_for_vpn_tunnel() {
         ## otherwise the tunnel truly is down and we keep waiting.
         elif is_socks_mode && ks_tunnel_connected_in_log && ks_socks_port_listening; then
             log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Disconnected in steady state)"
+            ## Keep the same sentinel used by the Connected-status branch so
+            ## callers running with `set -u` can safely inspect KS_VPN_IP.
+            KS_VPN_IP="$KS_REAL_IP"
             return 0
         else
             log DEBUG "VPN not connected yet..."

@@ -113,7 +113,7 @@ while true; do
         #### PROTECTED whenever the status check passes; do not
         #### invoke ks_is_leak at all.
         ks_set_state "$KS_PROTECTED" 2>/dev/null || true
-        return 0
+        continue
     fi
     if ks_is_leak; then
         # ---- LEAK SCENARIO ----

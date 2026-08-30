@@ -69,7 +69,46 @@ test_socks_wait_returns_on_connected() {
     fi
 }
 
-# ---- Test 2: ks_detect_current_ip returns 0 in SOCKS mode when status=Connected ----
+# ---- Test 2: the disconnected-status fallback initializes KS_VPN_IP -------
+test_socks_wait_fallback_initializes_vpn_ip() {
+    ADGUARD_CONNECTION_TYPE=SOCKS
+    KS_REAL_IP="211.176.140.126"
+    unset KS_VPN_IP
+
+    # A steady-state SOCKS tunnel can report Disconnected while its connected
+    # log entry and listener still prove that it is active.
+    check_adguard_vpn_status() { return 1; }
+    ks_tunnel_connected_in_log() { return 0; }
+    ks_socks_port_listening() { return 0; }
+    log() { :; }
+
+    if ks_wait_for_vpn_tunnel; then
+        if [ "$KS_VPN_IP" = "$KS_REAL_IP" ]; then
+            echo "  PASS: SOCKS fallback initializes KS_VPN_IP"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: SOCKS fallback left KS_VPN_IP='${KS_VPN_IP:-}'"
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: SOCKS disconnected-status fallback did not return 0"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# ---- Test 3: standalone kill-switch loop must not return from top level ----
+test_killswitch_loop_continues_after_socks_check() {
+    if grep -Eq '^[[:space:]]*return[[:space:]]+0[[:space:]]*$' \
+        "${PROJECT_DIR}/scripts/killswitch.sh"; then
+        echo "  FAIL: standalone kill-switch loop contains a top-level return 0"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: standalone kill-switch loop has no top-level return 0"
+        PASS=$((PASS + 1))
+    fi
+}
+
+# ---- Test 4: ks_detect_current_ip returns 0 in SOCKS mode when status=Connected ----
 test_socks_detect_returns_on_connected() {
     ADGUARD_CONNECTION_TYPE=SOCKS
     KS_REAL_IP="211.176.140.126"
@@ -331,6 +370,8 @@ test_socks_dispatcher_routes_to_darwin
 test_socks_darwin_uses_lsof
 test_socks_dispatcher_unsupported_os_fails_closed
 test_socks_wait_returns_on_connected
+test_socks_wait_fallback_initializes_vpn_ip
+test_killswitch_loop_continues_after_socks_check
 test_socks_detect_returns_on_connected
 test_socks_detect_fails_on_disconnected
 test_tun_detect_still_uses_ip
