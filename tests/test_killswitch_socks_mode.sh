@@ -46,10 +46,10 @@ test_socks_wait_returns_on_connected() {
 
     KS_VPN_IP=""
     # KS_MAX_WAIT_TIME is readonly (60 by default) -- use it directly
-    # Stub: IP detection would otherwise block / fail
-    # shellcheck disable=SC2329
+    # Stub: IP detection would otherwise block / fail; listener is ready.
     # shellcheck disable=SC2329
     check_adguard_vpn_status() { return 0; }
+    ks_socks_port_listening() { return 0; }
     ks_detect_ip_consistent() { echo "ERROR"; return 1; }
 
     # Stub: log to silence output
