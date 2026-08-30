@@ -23,6 +23,16 @@ readonly KS_MAX_WAIT_TIME="${ADGUARD_MAX_WAIT_TIME:-60}"
 # During LEAK_WARNING state, the interval halves for faster detection.
 # Override via ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL environment variable.
 readonly KS_CHECK_INTERVAL="${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-8}"
+# Optional SOCKS-mode check interval. Each iteration probes the public IP
+# through the proxy, so a longer interval reduces external call frequency in
+# SOCKS mode. Falls back to KS_CHECK_INTERVAL when unset or invalid.
+KS_SOCKS_CHECK_INTERVAL_CANDIDATE="${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL:-${KS_CHECK_INTERVAL}}"
+if ! [[ "$KS_SOCKS_CHECK_INTERVAL_CANDIDATE" =~ ^[1-9][0-9]*$ ]]; then
+    log WARN "Invalid ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL=${KS_SOCKS_CHECK_INTERVAL_CANDIDATE}, falling back to ${KS_CHECK_INTERVAL}"
+    KS_SOCKS_CHECK_INTERVAL_CANDIDATE="$KS_CHECK_INTERVAL"
+fi
+readonly KS_SOCKS_CHECK_INTERVAL="$KS_SOCKS_CHECK_INTERVAL_CANDIDATE"
+unset KS_SOCKS_CHECK_INTERVAL_CANDIDATE
 readonly KS_MAX_LEAK_TOLERANCE="${ADGUARD_MAX_LEAK_TOLERANCE:-0}"
 readonly KS_LEAK_WARNING_ONLY="${ADGUARD_LEAK_WARNING_ONLY:-false}"
 readonly KS_IP_RETRY_COUNT="${ADGUARD_MAX_IP_DETECTION_RETRIES:-3}"

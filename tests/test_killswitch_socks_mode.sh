@@ -422,10 +422,77 @@ test_socks_linux_parser_reads_proc_entries() {
     unset KS_PROC_NET_DIR
     rm -rf "$fake_proc_dir"
 }
+
+# ---- Test 11: ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL resolution ------
+# detector 모듈이 readonly로 인터벌을 잡기 때문에 각 케이스를 서브 셸에서
+# 다시 source하여 환경변수 분기 결과를 확인한다. 서브 셸에는 테스트와 동일한
+# 의존 모듈을 모두 로드해서 실제 런타임과 같은 환경을 만든다.
+_run_interval_probe() {
+    # 함수 인자: 1=$env_override_value ("" means unset)
+    local override="$1"
+    local script="
+        set +u
+        export ADGUARD_SHOW_LOG=false
+        export ADGUARD_SHOW_LOG_LEVEL=ERROR
+        export ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL=8
+        ${override+export ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL='${override}'}
+        source '${PROJECT_DIR}/scripts/lib/logging.sh' 2>/dev/null
+        source '${PROJECT_DIR}/scripts/lib/error_handling.sh' 2>/dev/null
+        source '${PROJECT_DIR}/scripts/lib/config.sh' 2>/dev/null
+        source '${PROJECT_DIR}/scripts/lib/network.sh' 2>/dev/null
+        source '${PROJECT_DIR}/scripts/lib/vpn_status.sh' 2>/dev/null
+        source '${PROJECT_DIR}/scripts/lib/killswitch_detector.sh' 2>/dev/null
+        printf '%s' \"\${KS_SOCKS_CHECK_INTERVAL-unset}\"
+    "
+    bash -c "$script"
+}
+
+test_socks_check_interval_defaults_to_global() {
+    local result
+    result=$(_run_interval_probe "")
+    if [ "$result" = "8" ]; then
+        echo "  PASS: SOCKS check interval falls back to KS_CHECK_INTERVAL when unset"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: expected 8, got '${result}'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+test_socks_check_interval_honors_env_override() {
+    local result
+    result=$(_run_interval_probe "30")
+    if [ "$result" = "30" ]; then
+        echo "  PASS: SOCKS check interval honours ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL=30"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: expected 30, got '${result}'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+test_socks_check_interval_rejects_invalid() {
+    local result
+    # 음수/문자열/0 은 모두 KS_CHECK_INTERVAL(=8) 로 fallback 해야 한다.
+    local bad_value
+    for bad_value in 0 -5 abc 1.5; do
+        result=$(_run_interval_probe "$bad_value")
+        if [ "$result" = "8" ]; then
+            echo "  PASS: SOCKS check interval rejects invalid '${bad_value}' -> 8"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: invalid '${bad_value}' produced '${result}'"
+            FAIL=$((FAIL + 1))
+        fi
+    done
+}
 test_socks_dispatcher_routes_to_darwin
 test_socks_darwin_uses_lsof
 test_socks_dispatcher_unsupported_os_fails_closed
 test_socks_linux_parser_reads_proc_entries
+test_socks_check_interval_defaults_to_global
+test_socks_check_interval_honors_env_override
+test_socks_check_interval_rejects_invalid
 test_socks_wait_returns_on_connected
 test_socks_wait_fallback_initializes_vpn_ip
 test_killswitch_loop_continues_after_socks_check

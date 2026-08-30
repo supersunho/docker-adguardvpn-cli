@@ -70,13 +70,20 @@ SCRIPT_START=$(date +%s)
 # =============================================================================
 
 while true; do
+    # Pick the effective check interval: SOCKS mode uses its own interval to
+    # bound external IP probe frequency; TUN mode uses the global default.
+    _ks_interval="$KS_CHECK_INTERVAL"
+    if is_socks_mode; then
+        _ks_interval="$KS_SOCKS_CHECK_INTERVAL"
+    fi
+
     # Dynamic check interval: faster checks during LEAK_WARNING to minimize
     # unprotected traffic, slower checks when in PROTECTED steady state.
     if ks_is_protected; then
-        sleep "$KS_CHECK_INTERVAL" &
+        sleep "$_ks_interval" &
     else
         # During LEAK_WARNING or STANDBY, halve the interval for quicker reaction
-        _fast_interval=$((KS_CHECK_INTERVAL / 2))
+        _fast_interval=$((_ks_interval / 2))
         [ "$_fast_interval" -lt 2 ] && _fast_interval=2
         sleep "$_fast_interval" &
     fi
