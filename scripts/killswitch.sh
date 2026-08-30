@@ -99,22 +99,10 @@ while true; do
     ks_detect_ip_change
 
     # 4. State machine logic
-    #### In SOCKS mode, IP detection through the SOCKS5 proxy is
-    #### unreliable and KS_CURRENT_IP is a sentinel (KS_REAL_IP).
-    #### The status check at step 1 (ks_is_vpn_connected) is
-    #### authoritative: if adguardvpn-cli says Connected and the
-    #### SOCKS5 port is listening, the tunnel is up.  We cannot
-    #### detect a real leak by comparing IPs, so skip the leak
-    if is_socks_mode; then
-        #### SOCKS mode: the status check at step 1 (ks_is_vpn_connected)
-        #### is authoritative.  KS_CURRENT_IP is a sentinel
-        #### (KS_REAL_IP/KS_VPN_IP) in SOCKS mode, so ks_is_leak
-        #### would falsely report a leak every iteration.  Stay in
-        #### PROTECTED whenever the status check passes; do not
-        #### invoke ks_is_leak at all.
-        ks_set_state "$KS_PROTECTED" 2>/dev/null || true
-        continue
-    fi
+    #### Both TUN and SOCKS modes use the same leak comparison.  In SOCKS
+    #### mode ks_detect_current_ip has already performed a real proxy egress
+    #### probe, so a direct-IP response is a genuine leak rather than a
+    #### sentinel value.
     if ks_is_leak; then
         # ---- LEAK SCENARIO ----
         # Record the leak — ks_record_leak compares count vs tolerance

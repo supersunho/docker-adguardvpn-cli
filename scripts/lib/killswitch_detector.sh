@@ -196,23 +196,16 @@ ks_wait_for_vpn_tunnel() {
 # Returns: 0 on success, 1 on failure (all retries exhausted)
 # Sets: KS_CURRENT_IP (global) with the detected IP
 ks_detect_current_ip() {
-    #### In SOCKS mode, IP detection through the SOCKS5 proxy is unreliable
-    #### (the proxy may be in a transient state right after tunnel up).  We
-    #### still want KS to work, so we treat the tunnel as active whenever
-    if is_socks_mode; then
-        if check_adguard_vpn_status; then
-            ## Set KS_CURRENT_IP to a sentinel (KS_VPN_IP if known) so
-            ## downstream callers (ks_is_leak / ks_detect_ip_change) do
-            ## not hit an unbound variable.  When KS_VPN_IP is empty
-            ## (we never got a real detected IP in SOCKS mode), fall
-            ## back to KS_REAL_IP; that means "not a leak" relative to
-            ## the pre-VPN real IP, which the SOCKS-mode caller already
-            ## overrides via check_adguard_vpn_status anyway.
-            KS_CURRENT_IP="${KS_VPN_IP:-$KS_REAL_IP}"
-            return 0
-        fi
+    #### In SOCKS mode, a Connected status or listening port is only a
+    #### liveness hint.  Always probe through the configured proxy so the
+    #### kill switch can detect both proxy failure and direct-IP fallback.
+    #### The retry loop below provides transient-startup tolerance.
+    if is_socks_mode && ! ks_socks_port_listening; then
+        log ERROR "SOCKS5 proxy port is not listening"
+        return 1
     fi
-    KS_CURRENT_IP=``
+
+    KS_CURRENT_IP=""
     local attempt=1
 
     while [ "$attempt" -le "$KS_IP_RETRY_COUNT" ]; do

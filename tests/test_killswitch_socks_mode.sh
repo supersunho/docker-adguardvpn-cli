@@ -1,16 +1,12 @@
 #!/bin/bash
-# Test: kill switch SOCKS-mode soft-success and IP detection bypass.
+# Test: kill switch SOCKS-mode liveness and proxy egress detection.
 #
-# In SOCKS mode, once adguardvpn-cli reports Connected, the SOCKS5 proxy is
-# listening on the configured port and traffic is actively tunneled.  The
-# detector must (a) treat Connected as immediate tunnel-active during the
-# 60s wait window, and (b) skip HTTP IP detection on the periodic check
-# (because IP detection through the proxy is unreliable in the first few
-# seconds and KS must not self-terminate just because the proxy is busy).
+# In SOCKS mode, a Connected status and listening port are only liveness
+# hints. The detector must probe the public IP through the proxy so the kill
+# switch can detect proxy failure or direct-IP fallback.
 #
-# This test stubs check_adguard_vpn_status and ks_detect_ip_consistent
-# (forcing the latter to ERROR) to confirm the SOCKS soft-success branch
-# returns 0 from ks_wait_for_vpn_tunnel and ks_detect_current_ip.
+# This test stubs check_adguard_vpn_status and ks_detect_ip_consistent to
+# confirm the SOCKS wait and egress paths.
 
 set -euo pipefail
 
@@ -108,7 +104,7 @@ test_killswitch_loop_continues_after_socks_check() {
     fi
 }
 
-# ---- Test 4: ks_detect_current_ip returns 0 in SOCKS mode when status=Connected ----
+# ---- Test 4: ks_detect_current_ip probes SOCKS egress on Connected --------
 test_socks_detect_returns_on_connected() {
     ADGUARD_CONNECTION_TYPE=SOCKS
     KS_REAL_IP="211.176.140.126"
@@ -117,19 +113,25 @@ test_socks_detect_returns_on_connected() {
     local start_ts elapsed
     start_ts=$(date +%s)
 
-    # Stub: adguardvpn-cli status returns Connected
+    # Stub: adguardvpn-cli status returns Connected and the SOCKS listener exists.
     check_adguard_vpn_status() { return 0; }
-    # Stub: IP detection would otherwise fail (but must NOT be called in SOCKS mode)
-    ks_detect_ip_consistent() { echo "ERROR"; return 1; }
+    ks_socks_port_listening() { return 0; }
+    # A successful response must come from the proxy path.
+    ks_detect_ip_consistent() { echo "198.51.100.20"; return 0; }
     log() { :; }
 
     if ks_detect_current_ip; then
         elapsed=$(( $(date +%s) - start_ts ))
         if [ "$elapsed" -le 1 ]; then
-            echo "  PASS: SOCKS detect returned immediately on Connected status"
-            PASS=$((PASS + 1))
+            if [ "$KS_CURRENT_IP" = "198.51.100.20" ]; then
+                echo "  PASS: SOCKS detect probes proxy egress on Connected status"
+                PASS=$((PASS + 1))
+            else
+                echo "  FAIL: SOCKS detect did not store the proxied IP"
+                FAIL=$((FAIL + 1))
+            fi
         else
-            echo "  FAIL: SOCKS detect took ${elapsed}s, expected <1s (must skip IP detect)"
+            echo "  FAIL: SOCKS detect took ${elapsed}s, expected <1s"
             FAIL=$((FAIL + 1))
         fi
     else
@@ -138,16 +140,17 @@ test_socks_detect_returns_on_connected() {
     fi
 }
 
-# ---- Test 3: ks_detect_current_ip fails in SOCKS mode when status=NOT Connected ----
+# ---- Test 5: ks_detect_current_ip fails when SOCKS egress is unavailable --
 test_socks_detect_fails_on_disconnected() {
     ADGUARD_CONNECTION_TYPE=SOCKS
     KS_REAL_IP="211.176.140.126"
     KS_VPN_IP=""
     KS_CURRENT_IP=""
 
-    # Stub: adguardvpn-cli status returns NOT Connected
+    # Status may be unstable in SOCKS steady state, but the listener exists.
     check_adguard_vpn_status() { return 1; }
-    # Stub: IP detection returns ERROR (must be called as fallback in this case)
+    ks_socks_port_listening() { return 0; }
+    # A failed proxy probe must fail closed.
     ks_detect_ip_consistent() { echo "ERROR"; return 1; }
     log() { :; }
 
@@ -155,9 +158,30 @@ test_socks_detect_fails_on_disconnected() {
         echo "  FAIL: SOCKS detect returned 0 even though status=NOT Connected"
         FAIL=$((FAIL + 1))
     else
-        echo "  PASS: SOCKS detect correctly returns 1 when status=NOT Connected"
-        PASS=$((FAIL + 1))
+        echo "  PASS: SOCKS detect correctly fails when proxy egress is unavailable"
         PASS=$((PASS + 1))
+    fi
+}
+
+# ---- Test 6: a direct-IP response is surfaced as a leak -------------------
+test_socks_detect_surfaces_direct_ip_leak() {
+    ADGUARD_CONNECTION_TYPE=SOCKS
+    KS_REAL_IP="211.176.140.126"
+    KS_VPN_IP="198.51.100.20"
+    KS_CURRENT_IP=""
+
+    check_adguard_vpn_status() { return 0; }
+    ks_socks_port_listening() { return 0; }
+    # Simulate a proxy path that has fallen back to the host's real egress.
+    ks_detect_ip_consistent() { echo "$KS_REAL_IP"; return 0; }
+    log() { :; }
+
+    if ks_detect_current_ip && ks_is_leak; then
+        echo "  PASS: SOCKS detector surfaces direct-IP responses as leaks"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: SOCKS detector did not surface direct-IP leak"
+        FAIL=$((FAIL + 1))
     fi
 }
 
@@ -374,6 +398,7 @@ test_socks_wait_fallback_initializes_vpn_ip
 test_killswitch_loop_continues_after_socks_check
 test_socks_detect_returns_on_connected
 test_socks_detect_fails_on_disconnected
+test_socks_detect_surfaces_direct_ip_leak
 test_tun_detect_still_uses_ip
 test_socks_is_connected_returns_on_port_listening
 test_socks_is_connected_fails_when_port_closed
