@@ -125,13 +125,19 @@ jobs:
                         exit 1
                     }
 
-                    if docker buildx imagetools inspect "$target_ref" >/dev/null 2>&1; then
-                        echo "❌ Stable image tag already exists: ${target_ref}" >&2
-                        exit 1
+                    existing_target_digest=$(docker buildx imagetools inspect "$target_ref" \
+                        --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+                    if [ -n "$existing_target_digest" ]; then
+                        if [ "$existing_target_digest" != "$source_digest" ]; then
+                            echo "❌ Stable image tag points to a different digest: ${target_ref}" >&2
+                            echo "   source=${source_digest} existing=${existing_target_digest}" >&2
+                            exit 1
+                        fi
+                        echo "♻️ Stable image tag already matches source digest: ${target_ref}"
+                    else
+                        echo "🏷️ Retagging ${source_ref} → ${target_ref}"
+                        docker buildx imagetools create --tag "$target_ref" "$source_ref"
                     fi
-
-                    echo "🏷️ Retagging ${source_ref} → ${target_ref}"
-                    docker buildx imagetools create --tag "$target_ref" "$source_ref"
                     echo "🏷️ Updating ${latest_ref} → ${target_ref}"
                     docker buildx imagetools create --tag "$latest_ref" "$target_ref"
 

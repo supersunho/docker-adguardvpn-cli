@@ -281,7 +281,8 @@ test_promotion_promotes_container_images() {
        [ "$(grep -c 'docker/login-action@v3' "$workflow")" -lt 2 ] || \
        ! grep -q 'docker buildx imagetools create' <<< "$promotion_block" || \
        ! grep -q 'source_digest' <<< "$promotion_block" || \
-       ! grep -q 'latest_digest' <<< "$promotion_block"; then
+       ! grep -q 'latest_digest' <<< "$promotion_block" || \
+       ! grep -q 'existing_target_digest' <<< "$promotion_block"; then
         echo "  FAIL: Stable promotion does not retag and verify container images"
         FAIL=$((FAIL + 1))
     elif ! grep -q 'files: /tmp/release-digests/digest-\*\.txt' "$workflow" || \
