@@ -77,6 +77,10 @@ _config_define_schema() {
         "positive_int" "8" \
         "Kill switch check interval in seconds"
 
+    _config_add "ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL" \
+        "positive_int" "8" \
+        "Kill switch check interval in seconds when ADGUARD_CONNECTION_TYPE=SOCKS (inherits ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL by leaving the variable unset)"
+
     _config_add "ADGUARD_MAX_LEAK_TOLERANCE" \
         "non_negative_int" "0" \
         "Number of leak detections before termination (0 = immediate termination on first leak)"
