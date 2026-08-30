@@ -195,6 +195,23 @@ RUNNER
     fi
 }
 
+# Test 11: kill-switch startup is monitored immediately by its own wait loop
+test_kill_switch_has_no_blind_startup_sleep() {
+    local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
+    local kill_switch_block
+    # shellcheck disable=SC2016 # sed range intentionally matches literal shell syntax.
+    kill_switch_block=$(sed -n '/^if \[ "\${ADGUARD_USE_KILL_SWITCH,,}" = "true" \]; then/,/^else$/p' "$entrypoint" 2>/dev/null || true)
+
+    if echo "$kill_switch_block" | grep -q '/opt/adguardvpn_cli/scripts/killswitch.sh' && \
+       ! echo "$kill_switch_block" | grep -q '_KS_STABILIZE_DELAY\|Stabilizing VPN connection'; then
+        echo "  PASS: Kill Switch starts without a blind startup grace sleep"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Kill Switch still has an unmonitored startup sleep"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 # Test 9: data directory creation fails fast and reports the actual UID:GID
 test_data_directory_permission_failure_is_actionable() {
     local entrypoint="${PROJECT_DIR}/scripts/docker-entrypoint.sh"
@@ -525,6 +542,8 @@ echo ""
 test_kill_switch_waits_for_child_exit
 echo ""
 test_kill_switch_exits_without_polling_delay
+echo ""
+test_kill_switch_has_no_blind_startup_sleep
 echo ""
 test_data_directory_permission_failure_is_actionable
 echo ""
