@@ -16,10 +16,10 @@
 # =============================================================================
 #
 # _CONFIG_KEYS ordered list of key names
-# _CONFIG_TYPE[key]       type: bool|port|positive_int|ip|dns|enum|string
+# _CONFIG_TYPE[key]       type: bool|port|positive_int|bounded_int|non_negative_int|ip|dns|enum|string
 # _CONFIG_DEFAULT[key]    default value
 # _CONFIG_DESC[key]       human-readable description
-# _CONFIG_ENUM[key]       comma-separated valid values (for type=enum)
+# _CONFIG_ENUM[key]       comma-separated valid values (for type=enum) or "lo,hi" for type=bounded_int
 #
 # =============================================================================
 
@@ -44,17 +44,21 @@ _config_define_schema() {
         "positive_int" "900" \
         "Device-code OAuth timeout in seconds"
 
+    _config_add "ADGUARD_PERSISTENT_IDENTITY" \
+        "bool" "false" \
+        "Persist and reapply the container primary-interface MAC before VPN startup"
+
     # ---------- SOCKS proxy ----------
     # NOTE: Defaults are intentionally empty to force explicit user configuration.
     #       The review finding (CRITICAL) flagged hardcoded "username"/"password"
     #       defaults as trivially guessable credentials.
     _config_add "ADGUARD_SOCKS5_USERNAME" \
         "string" "" \
-        "SOCKS5 proxy username (required when SOCKS connection type is selected)"
+        "SOCKS5 proxy username (optional on localhost; set with a password before exposing the proxy)"
 
     _config_add "ADGUARD_SOCKS5_PASSWORD" \
         "string" "" \
-        "SOCKS5 proxy password (required when SOCKS connection type is selected)"
+        "SOCKS5 proxy password (optional on localhost; set with a username before exposing the proxy)"
 
     _config_add "ADGUARD_SOCKS5_HOST" \
         "ip" "127.0.0.1" \
@@ -67,11 +71,16 @@ _config_define_schema() {
     # ---------- Kill switch ----------
     _config_add "ADGUARD_USE_KILL_SWITCH" \
         "bool" "true" \
-        "Enable kill switch to prevent IP leaks when VPN drops"
+        "Enable kill-switch IP/leak monitoring; when false, use the status supervisor instead"
 
     _config_add "ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL" \
         "positive_int" "8" \
         "Kill switch check interval in seconds"
+
+    _config_add "ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL" \
+        "positive_int" "8" \
+        "Kill switch check interval in seconds when ADGUARD_CONNECTION_TYPE=SOCKS (leave unset to inherit ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL)" \
+        "" "true"
 
     _config_add "ADGUARD_MAX_LEAK_TOLERANCE" \
         "non_negative_int" "0" \
@@ -83,11 +92,11 @@ _config_define_schema() {
 
     _config_add "ADGUARD_MAX_IP_DETECTION_RETRIES" \
         "positive_int" "3" \
-        "Maximum IP detection retry attempts"
+        "Maximum retry attempts for each kill-switch public-IP check"
 
     _config_add "ADGUARD_IP_DETECTION_RETRY_DELAY" \
         "positive_int" "10" \
-        "Delay in seconds between IP detection retries"
+        "Delay in seconds between kill-switch public-IP retries"
 
     # ---------- DNS ----------
     _config_add "ADGUARD_USE_CUSTOM_DNS" \
@@ -166,7 +175,12 @@ _config_define_schema() {
 
     _config_add "ADGUARD_MAX_WAIT_TIME" \
         "positive_int" "60" \
-        "Maximum wait time in seconds for the AdGuard VPN log file to appear"
+        "Maximum wait time in seconds for the AdGuard VPN log file and, when enabled, kill-switch tunnel activation"
+
+    _config_add "ADGUARD_VPN_STARTUP_GRACE_SECONDS" \
+        "bounded_int" "30" \
+        "Seconds to allow the VPN tunnel to establish before the status supervisor treats a not-connected check as failure" \
+        "0,600"
 }
 
 # ---- Internal helpers -------------------------------------------------------
@@ -175,16 +189,20 @@ declare -A _CONFIG_TYPE
 declare -A _CONFIG_DEFAULT
 declare -A _CONFIG_DESC
 declare -A _CONFIG_ENUM
+declare -A _CONFIG_OPTIONAL
 _CONFIG_KEYS=()
 
 _config_add() {
-    local key="$1" type="$2" default="$3" desc="$4" enum="${5:-}"
+    local key="$1" type="$2" default="$3" desc="$4" enum="${5:-}" optional="${6:-false}"
     _CONFIG_KEYS+=("$key")
     _CONFIG_TYPE["$key"]="$type"
     _CONFIG_DEFAULT["$key"]="$default"
     _CONFIG_DESC["$key"]="$desc"
     if [ -n "$enum" ]; then
         _CONFIG_ENUM["$key"]="$enum"
+    fi
+    if [ "$optional" = "true" ]; then
+        _CONFIG_OPTIONAL["$key"]=1
     fi
 }
 
@@ -197,10 +215,19 @@ fi
 # ---- Public: config_export_defaults -----------------------------------------
 
 # Export every variable with its default if not already set.
+# Optional keys (see _config_add's 6th argument) are skipped when unset so
+# the value can be inherited from a parent process or stay genuinely unset
+# for downstream fallback logic.
 config_export_defaults() {
     local key
     for key in "${_CONFIG_KEYS[@]}"; do
         if [ -z "${!key:-}" ]; then
+            if [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+                # Leave the variable unset on purpose. The unset state is
+                # meaningful: it lets consumers (e.g. the kill switch
+                # detector) fall back to a different source.
+                continue
+            fi
             export "${key}=${_CONFIG_DEFAULT[$key]}"
         fi
     done
@@ -216,6 +243,14 @@ config_normalize() {
 
     for key in "${_CONFIG_KEYS[@]}"; do
         val="${!key:-}"
+
+        # Optional keys: if unset, leave the variable unset so consumers
+        # can apply their own fallback semantics. Validation is also
+        # skipped for the empty case.
+        if [ -z "$val" ] && [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            continue
+        fi
+
         [ -z "$val" ] && val="${_CONFIG_DEFAULT[$key]}"
 
         case "${_CONFIG_TYPE[$key]}" in
@@ -256,6 +291,14 @@ config_validate() {
 
     for key in "${_CONFIG_KEYS[@]}"; do
         val="${!key:-}"
+
+        # Optional keys: skip validation entirely when the value is
+        # empty so an unset SOCKS_CHECK_INTERVAL (intended to inherit
+        # the global interval) does not fail the bootstrap.
+        if [ -z "$val" ] && [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            continue
+        fi
+
         [ -z "$val" ] && val="${_CONFIG_DEFAULT[$key]}"
 
         case "${_CONFIG_TYPE[$key]}" in
@@ -274,6 +317,14 @@ config_validate() {
             positive_int)
                 if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt 1 ]; then
                     log ERROR "${key}: must be a positive integer (got '${val}')"
+                    err=1
+                fi
+                ;;
+            bounded_int)
+                local lo hi
+                IFS=, read -r lo hi <<< "${_CONFIG_ENUM[$key]:-,}"
+                if ! [[ $val =~ ^[0-9]+$ ]] || [ "$val" -lt "$lo" ] || [ "$val" -gt "$hi" ]; then
+                    log ERROR "${key}: must be an integer in ${lo}-${hi} (got '${val}')"
                     err=1
                 fi
                 ;;
@@ -341,18 +392,27 @@ config_get() {
 
 # Print a .env file (key=value with comments) based on the schema.
 config_generate_dotenv() {
-    local key desc line last_key
+    local key desc line last_key rendered_default
     local prev_category=""
     last_key="${_CONFIG_KEYS[${#_CONFIG_KEYS[@]} - 1]}"
 
     for key in "${_CONFIG_KEYS[@]}"; do
         desc="${_CONFIG_DESC[$key]}"
 
+        # Optional keys print an empty value so the resulting .env leaves
+        # the variable unset and the consumer can fall back to the parent
+        # (e.g. SOCKS check interval inheriting the global one).
+        if [ -n "${_CONFIG_OPTIONAL[$key]:-}" ]; then
+            rendered_default=""
+        else
+            rendered_default="${_CONFIG_DEFAULT[$key]}"
+        fi
+
         # Insert a blank line + category comment on category transitions
         # (derived from the first word of the description when it changes
         #  pattern; this is a simple heuristic.)
         echo "# ${desc}"
-        echo "${key}=${_CONFIG_DEFAULT[$key]}"
+        echo "${key}=${rendered_default}"
         if [ "$key" != "$last_key" ]; then
             echo ""
         fi

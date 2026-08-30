@@ -7,12 +7,10 @@ services:
         volumes:
             - ./data:/home/appuser/.local/share/adguardvpn-cli
         healthcheck:
-            # Use same regex pattern as check_adguard_vpn_status() in vpn_status.sh
-            # for consistency between kill-switch and health check logic.
-            # In SOCKS mode, also verify the proxy listener is accepting connections.
-            test: ["CMD-SHELL", "adguardvpn-cli status 2>&1 | grep -qE 'Connected.*mode' || exit 1"]
+            # TUN checks CLI status; SOCKS checks both listener and proxy egress.
+            test: ["CMD", "/opt/adguardvpn_cli/scripts/healthcheck.sh"]
             interval: 1m
-            timeout: 10s
+            timeout: 15s
             retries: 5
             start_period: 5m
         cap_add:

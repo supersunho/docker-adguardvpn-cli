@@ -169,6 +169,30 @@ test_release_downloads_digest_artifacts() {
 }
 
 # =============================================================================
+# Test 12: Release assets are uploaded before the release is published
+# =============================================================================
+
+test_release_publishes_after_upload() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local release_block
+    release_block=$(sed -n '/create-release:/,$p' "$workflow")
+
+    if echo "$release_block" | grep -q 'id: github-release' && \
+       echo "$release_block" | grep -q 'draft: true' && \
+       echo "$release_block" | grep -q 'Publish GitHub Release' && \
+       echo "$release_block" | grep -q 'RELEASE_ID:.*steps.github-release.outputs.id' && \
+       echo "$release_block" | grep -q 'body=@release-notes.txt' && \
+       echo "$release_block" | grep -q "releases/\${RELEASE_ID}" && \
+       echo "$release_block" | grep -q -- '-F draft=false'; then
+        echo "  PASS: Release is published only after asset upload using its release ID"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Release publication is not tied to the uploaded draft release"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Test 11: Stable promotion does not interpolate inputs into shell commands
 # =============================================================================
 
@@ -194,6 +218,102 @@ test_promotion_workflow_uses_safe_inputs() {
     else
         echo "  FAIL: Promotion workflow is missing safe commit promotion checks"
         FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 13: Stable promotion must use the pre-release's version base
+# =============================================================================
+
+test_promotion_requires_matching_version_base() {
+    local workflow="${PROJECT_DIR}/.github/workflows/promote-release.yml"
+    local validation
+    # Extract the exact validation script from the workflow so these cases do
+    # not duplicate its semver or version-matching logic in the test.
+    validation=$(awk '
+        /^[[:space:]]+run: \|$/ { in_run=1; next }
+        in_run && /^[[:space:]]+- name:/ { exit }
+        in_run {
+            sub(/^                /, "")
+            print
+        }
+    ' "$workflow")
+
+    local mismatch_output
+    if mismatch_output=$(EXISTING_TAG="v2.1.0-beta.2" PROMOTE_TAG="v3.0.0" \
+        bash -c "$validation" 2>&1); then
+        echo "  FAIL: Promotion validation accepted mismatched version bases"
+        echo "$mismatch_output"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    if ! grep -q 'must match the pre-release base version' <<< "$mismatch_output"; then
+        echo "  FAIL: Mismatched version bases did not produce a clear error"
+        echo "$mismatch_output"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    local matching_output
+    if matching_output=$(EXISTING_TAG="v2.1.0-beta.2" PROMOTE_TAG="v2.1.0" \
+        bash -c "$validation" 2>&1); then
+        echo "  PASS: Promotion rejects mismatched bases and accepts matching bases"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Promotion validation rejected a matching version base"
+        echo "$matching_output"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 14: Stable promotion retags and verifies both container registries
+# =============================================================================
+
+test_promotion_promotes_container_images() {
+    local workflow="${PROJECT_DIR}/.github/workflows/promote-release.yml"
+    local promotion_block
+    promotion_block=$(sed -n '/- name: 🐳 Promote multi-arch container images/,/- name: 📥 Download pre-release digest assets/p' "$workflow")
+
+    if ! grep -q 'packages: write' "$workflow" || \
+       ! grep -q 'docker/setup-buildx-action@v3' "$workflow" || \
+       [ "$(grep -c 'docker/login-action@v3' "$workflow")" -lt 2 ] || \
+       ! grep -q 'docker buildx imagetools create' <<< "$promotion_block" || \
+       ! grep -q 'source_digest' <<< "$promotion_block" || \
+       ! grep -q 'latest_digest' <<< "$promotion_block" || \
+       ! grep -q 'existing_target_digest' <<< "$promotion_block"; then
+        echo "  FAIL: Stable promotion does not retag and verify container images"
+        FAIL=$((FAIL + 1))
+    elif ! grep -q 'files: /tmp/release-digests/digest-\*\.txt' "$workflow" || \
+         ! grep -q 'gh release download' "$workflow"; then
+        echo "  FAIL: Stable promotion does not carry digest assets forward"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: Stable promotion retags registries and carries digest assets"
+        PASS=$((PASS + 1))
+    fi
+}
+
+# =============================================================================
+# Test 14: Compose configuration validation gates the image build
+# =============================================================================
+
+test_compose_config_is_build_gate() {
+    local workflow="${PROJECT_DIR}/.github/workflows/docker-multiarch.yml"
+    local unit_tests_block
+    unit_tests_block=$(sed -n '/^    unit-tests:/,/^    [a-z-]*:/p' "$workflow")
+
+    if [ -z "$unit_tests_block" ] || \
+       ! grep -q 'docker compose --env-file \.env\.example -f docker-compose\.yml config --quiet' <<< "$unit_tests_block"; then
+        echo "  FAIL: Unit-test build gate does not validate Compose configuration"
+        FAIL=$((FAIL + 1))
+    elif ! grep -q 'needs: \[prepare, shellcheck, unit-tests, actionlint\]' "$workflow"; then
+        echo "  FAIL: Build job is not gated on the unit-tests job"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: Compose configuration validation runs in the build gate"
+        PASS=$((PASS + 1))
     fi
 }
 
@@ -279,7 +399,15 @@ test_latest_alias_is_guarded
 echo ""
 test_release_downloads_digest_artifacts
 echo ""
+test_release_publishes_after_upload
+echo ""
 test_promotion_workflow_uses_safe_inputs
+echo ""
+test_promotion_requires_matching_version_base
+echo ""
+test_promotion_promotes_container_images
+echo ""
+test_compose_config_is_build_gate
 echo ""
 
 echo "=========================================="

@@ -259,6 +259,18 @@ jobs:
               run: |
                   cd tests && bash run_tests.sh unit
 
+            - name: 🧩 Validate Compose configuration
+              run: |
+                  compose_check_dir=$(mktemp -d)
+                  trap 'rm -rf "$compose_check_dir"' EXIT
+                  cp docker-compose.yml "$compose_check_dir/docker-compose.yml"
+                  cp .env.example "$compose_check_dir/.env.example"
+                  cp .env.example "$compose_check_dir/.env"
+                  (
+                    cd "$compose_check_dir"
+                    docker compose --env-file .env.example -f docker-compose.yml config --quiet
+                  )
+
     actionlint:
         needs: prepare
         runs-on: ubuntu-latest
@@ -708,12 +720,68 @@ jobs:
               id: release-notes
               run: |
                   CURRENT_TAG="${{ needs.prepare.outputs.release_tag }}"
-                  PREV_TAG=$(git tag --merged HEAD --sort=-v:refname | awk -v current_tag="$CURRENT_TAG" '$0 != current_tag { print; exit }')
+                  BUILD_VERSION_BASE="${{ needs.prepare.outputs.build_version_base }}"
+                  PRERELEASE_FLAG="${{ needs.prepare.outputs.prerelease }}"
+
+                  # ---------------------------------------------------------------------------
+                  # Resolve PREV_TAG by semantic version, independently of commit ancestry.
+                  # Branch history may have been rewritten even when two release lines contain
+                  # patch-equivalent commits, so ancestry is not a reliable release boundary.
+                  #   Tier 1 (prerelease only): latest lower tag with the same version base.
+                  #     - 2.1.0-beta.2 -> 2.1.0-beta.1
+                  #     - 2.1.0-rc.1   -> 2.1.0-beta.3
+                  #     Skipped for stable releases so a 2.1.0 stable build does NOT diff
+                  #     against 2.1.0-beta.3 only — it falls through to Tier 2 and picks up
+                  #     the previous stable (2.0.0), giving the full beta cycle in notes.
+                  #   Tier 2 (always): latest stable tag with a strictly lower, different
+                  #     version base. Picks the previous stable for the first
+                  #     prerelease of a line (2.1.0-beta.1 -> 2.0.0) and the previous stable
+                  #     for a stable release (2.1.0 -> 2.0.0).
+                  #   Tier 3: no previous semantic release tag -> initial commit.
+                  # ---------------------------------------------------------------------------
+                  mapfile -t ALL_TAGS < <(git tag --sort=-v:refname)
+
+                  PREV_TAG=""
+
+                  # Tier 1: same MAJOR.MINOR.PATCH base and lower semantic version.
+                  # Only active for prerelease builds; stable builds skip this tier so their
+                  # changelog covers the entire prerelease cycle against the last stable.
+                  if [ "$PRERELEASE_FLAG" = "true" ]; then
+                    for tag in "${ALL_TAGS[@]}"; do
+                      [ "$tag" = "$CURRENT_TAG" ] && continue
+                      tag_clean="${tag#v}"
+                      tag_base="${tag_clean%%-*}"
+                      [ "$tag_base" = "$BUILD_VERSION_BASE" ] || continue
+                      [ "$tag_clean" != "$tag_base" ] || continue
+                      lowest=$(printf '%s\n%s\n' "$tag" "$CURRENT_TAG" | sort -V | head -n1)
+                      [ "$lowest" = "$tag" ] || continue
+                      PREV_TAG="$tag"
+                      break
+                    done
+                  fi
+
+                  # Tier 2: latest lower stable tag with a different version base.
+                  # Same-base prereleases are owned by Tier 1 and are deliberately skipped
+                  # for stable releases so 2.1.0 spans the full cycle from v2.0.0.
+                  if [ -z "$PREV_TAG" ]; then
+                    for tag in "${ALL_TAGS[@]}"; do
+                      [ "$tag" = "$CURRENT_TAG" ] && continue
+                      tag_clean="${tag#v}"
+                      tag_base="${tag_clean%%-*}"
+                      [ "$tag_base" != "$BUILD_VERSION_BASE" ] || continue
+                      [ "$tag_clean" = "$tag_base" ] || continue
+                      lowest=$(printf '%s\n%s\n' "$tag" "$CURRENT_TAG" | sort -V | head -n1)
+                      [ "$lowest" = "$tag" ] || continue
+                      PREV_TAG="$tag"
+                      break
+                    done
+                  fi
+
                   if [ -z "$PREV_TAG" ]; then
                     echo "🔍 No previous tag found, using initial commit"
                     PREV_TAG=$(git rev-list --max-parents=0 HEAD)
                   else
-                    echo "🔍 Previous tag found: $PREV_TAG"
+                    echo "🔍 Previous tag found: $PREV_TAG (current: $CURRENT_TAG, base: $BUILD_VERSION_BASE, prerelease=$PRERELEASE_FLAG)"
                   fi
 
                   FEATURES=""
@@ -747,7 +815,11 @@ jobs:
                         OTHERS="${OTHERS}- ${COMMIT_SUBJECT} (${COMMIT_HASH})"$'\n'
                       fi
                     fi
-                  done < <(git log --oneline "${PREV_TAG}..HEAD" --pretty=format:"%h|%s" | sort -k2)
+                  # Three-dot + --right-only lists changes introduced on the release side.
+                  # --cherry-pick removes patch-equivalent commits whose SHA changed after a
+                  # rebase/history rewrite, and --no-merges keeps PR merge noise out of notes.
+                  done < <(git log --right-only --cherry-pick --no-merges \
+                    --pretty=format:"%h|%s" "${PREV_TAG}...HEAD" | sort -k2)
 
                   RELEASE_NOTES="# 🚀 AdGuard VPN CLI Release ${{ needs.prepare.outputs.build_version }}"
                   RELEASE_NOTES="${RELEASE_NOTES}
@@ -784,6 +856,10 @@ jobs:
                   ### 📦 Chores
                   ${CHORES}
                   "
+                  [ -n "$OTHERS" ] && RELEASE_NOTES="${RELEASE_NOTES}
+                  ### 🔩 Other Changes
+                  ${OTHERS}
+                  "
 
                   echo -e "$RELEASE_NOTES" > release-notes.txt
                   {
@@ -794,7 +870,8 @@ jobs:
 
                   echo "✅ Release notes generated"
 
-            - name: 🏷️ Create GitHub Release
+            - name: 🏷️ Create GitHub Release draft
+              id: github-release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ needs.prepare.outputs.release_tag }}
@@ -802,7 +879,46 @@ jobs:
                   name: "AdGuard VPN CLI Release ${{ needs.prepare.outputs.release_tag }}"
                   body: ${{ steps.release-notes.outputs.body }}
                   files: /tmp/digests/digest-*.txt
-                  draft: false
+                  # Keep the release draft while assets are uploaded. This lets reruns
+                  # reuse an existing draft for the same tag without creating a second
+                  # release that fails when GitHub creates the tag during finalization.
+                  draft: true
                   prerelease: ${{ needs.prepare.outputs.prerelease }}
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: 📝 Sync selected release draft
+              if: steps.github-release.outputs.id != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ steps.github-release.outputs.id }}
+                  PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+              run: |
+                  set -euo pipefail
+                  # canonicalization may select a pre-existing draft. Refresh its metadata
+                  # so the selected release points at this build and has the generated notes.
+                  gh api --method PATCH \
+                    "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+                    -F target_commitish="$GITHUB_SHA" \
+                    -F body=@release-notes.txt \
+                    -F prerelease="$PRERELEASE" >/dev/null
+                  echo "✅ Synced release ID ${RELEASE_ID}"
+
+            - name: 🚀 Publish GitHub Release
+              if: steps.github-release.outputs.id != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_ID: ${{ steps.github-release.outputs.id }}
+                  PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+                  MAKE_LATEST: ${{ needs.prepare.outputs.publish_latest }}
+              run: |
+                  set -euo pipefail
+                  # Publish the exact release that received the digest assets. Using the
+                  # action output ID avoids a second tag lookup while an untagged draft is
+                  # being finalized and preserves the stable/latest policy from prepare.
+                  gh api --method PATCH \
+                    "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+                    -F draft=false \
+                    -F prerelease="$PRERELEASE" \
+                    -F make_latest="$MAKE_LATEST" >/dev/null
+                  echo "✅ Published release ID ${RELEASE_ID}"

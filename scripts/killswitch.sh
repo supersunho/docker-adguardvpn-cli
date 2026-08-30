@@ -50,7 +50,13 @@ if ! ks_wait_for_vpn_tunnel; then
     ks_terminate "VPN tunnel did not activate within ${KS_MAX_WAIT_TIME}s"
 fi
 
-ks_set_state "$KS_PROTECTED"
+## Only transition to PROTECTED if we observed a real IP change during the
+## tunnel wait.  Soft-success (status=Connected but IP still real-IP) means
+## routes are still flipping — let the main loop's STANDBY->PROTECTED guard
+## (line ~128 in this file) handle the transition once propagation finishes.
+if [ "$KS_VPN_IP" != "$KS_REAL_IP" ] && [ -n "$KS_VPN_IP" ]; then
+    ks_set_state "$KS_PROTECTED"
+fi
 
 # =============================================================================
 # Tracking variables
@@ -64,13 +70,20 @@ SCRIPT_START=$(date +%s)
 # =============================================================================
 
 while true; do
+    # Pick the effective check interval: SOCKS mode uses its own interval to
+    # bound external IP probe frequency; TUN mode uses the global default.
+    _ks_interval="$KS_CHECK_INTERVAL"
+    if is_socks_mode; then
+        _ks_interval="$KS_SOCKS_CHECK_INTERVAL"
+    fi
+
     # Dynamic check interval: faster checks during LEAK_WARNING to minimize
     # unprotected traffic, slower checks when in PROTECTED steady state.
     if ks_is_protected; then
-        sleep "$KS_CHECK_INTERVAL" &
+        sleep "$_ks_interval" &
     else
         # During LEAK_WARNING or STANDBY, halve the interval for quicker reaction
-        _fast_interval=$((KS_CHECK_INTERVAL / 2))
+        _fast_interval=$((_ks_interval / 2))
         [ "$_fast_interval" -lt 2 ] && _fast_interval=2
         sleep "$_fast_interval" &
     fi
@@ -93,6 +106,10 @@ while true; do
     ks_detect_ip_change
 
     # 4. State machine logic
+    #### Both TUN and SOCKS modes use the same leak comparison.  In SOCKS
+    #### mode ks_detect_current_ip has already performed a real proxy egress
+    #### probe, so a direct-IP response is a genuine leak rather than a
+    #### sentinel value.
     if ks_is_leak; then
         # ---- LEAK SCENARIO ----
         # Record the leak — ks_record_leak compares count vs tolerance
@@ -137,6 +154,10 @@ while true; do
         if [ "$TOTAL_CHECKS" -eq 1 ] || [ $((TOTAL_CHECKS % 4)) -eq 0 ]; then
             ks_heartbeat "$TOTAL_CHECKS" "$UPTIME"
         fi
+    fi
+
+    if [ $((TOTAL_CHECKS % 20)) -eq 0 ]; then
+        ks_print_summary "$TOTAL_CHECKS" "$_KS_LEAK_COUNT" "$UPTIME"
     fi
 
     if [ $((TOTAL_CHECKS % 20)) -eq 0 ]; then

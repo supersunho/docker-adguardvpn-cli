@@ -74,6 +74,106 @@ test_init_does_not_clear_socks_auth_before_configuration() {
     fi
 }
 
+# =============================================================================
+# Persistent identity preservation during auth reset (option C)
+# =============================================================================
+
+test_persistent_identity_preserved_on_optin_reset() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    local data_dir="${test_dir}/data"
+    mkdir -p "${data_dir}/identity"
+    printf '%s\n' '02:34:56:78:9a:bc' > "${data_dir}/identity/mac"
+    chmod 600 "${data_dir}/identity/mac"
+    chmod 700 "${data_dir}/identity"
+    printf '%s\n' 'session' > "${data_dir}/session.json"
+
+    DATA_DIR="$data_dir" \
+    ADGUARD_SHOW_LOG=false \
+    ADGUARD_PERSISTENT_IDENTITY=true \
+    bash -c "
+        source '${PROJECT_DIR}/scripts/lib/logging.sh'
+        # shellcheck disable=SC1090
+        source <(sed -n '/^_reset_auth_data() {/,/^}/p' '${PROJECT_DIR}/scripts/init.sh')
+        _reset_auth_data
+    "
+    local rc=$?
+
+    if [ "$rc" -ne 0 ]; then
+        echo "  FAIL: opt-in reset returned non-zero ($rc)"
+        FAIL=$((FAIL + 1))
+        rm -rf "$test_dir"
+        return
+    fi
+
+    if [ -f "${data_dir}/identity/mac" ] && \
+       [ "$(cat "${data_dir}/identity/mac")" = "02:34:56:78:9a:bc" ] && \
+       [ ! -e "${data_dir}/session.json" ]; then
+        echo "  PASS: opt-in reset preserves identity/mac and removes session"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: opt-in reset did not preserve identity or removed it incorrectly"
+        echo "    identity/mac present: $([ -f "${data_dir}/identity/mac" ] && echo yes || echo no)"
+        echo "    identity/mac content: $(cat "${data_dir}/identity/mac" 2>/dev/null || echo missing)"
+        echo "    session.json present: $([ -e "${data_dir}/session.json" ] && echo yes || echo no)"
+        FAIL=$((FAIL + 1))
+    fi
+
+    rm -rf "$test_dir"
+    unset DATA_DIR ADGUARD_PERSISTENT_IDENTITY
+}
+
+test_persistent_identity_removed_on_optout_reset() {
+    local test_dir
+    test_dir=$(mktemp -d)
+    local data_dir="${test_dir}/data"
+    mkdir -p "${data_dir}/identity"
+    printf '%s\n' '02:34:56:78:9a:bc' > "${data_dir}/identity/mac"
+    chmod 600 "${data_dir}/identity/mac"
+    chmod 700 "${data_dir}/identity"
+
+    DATA_DIR="$data_dir" \
+    ADGUARD_SHOW_LOG=false \
+    ADGUARD_PERSISTENT_IDENTITY=false \
+    bash -c "
+        source '${PROJECT_DIR}/scripts/lib/logging.sh'
+        # shellcheck disable=SC1090
+        source <(sed -n '/^_reset_auth_data() {/,/^}/p' '${PROJECT_DIR}/scripts/init.sh')
+        _reset_auth_data
+    "
+    local rc=$?
+
+    if [ "$rc" -ne 0 ]; then
+        echo "  FAIL: opt-out reset returned non-zero ($rc)"
+        FAIL=$((FAIL + 1))
+        rm -rf "$test_dir"
+        return
+    fi
+
+    if [ ! -e "${data_dir}/identity" ] && [ ! -e "${data_dir}/identity/mac" ]; then
+        echo "  PASS: opt-out reset removes identity subtree (legacy behavior)"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: opt-out reset kept identity subtree (expected removal)"
+        FAIL=$((FAIL + 1))
+    fi
+
+    rm -rf "$test_dir"
+    unset DATA_DIR ADGUARD_PERSISTENT_IDENTITY
+}
+
+test_init_references_persistent_identity_in_reset_log() {
+    # The opt-in branch must log the explicit "preserved" message so operators
+    # do not mistakenly assume the MAC was rotated.
+    if grep -q 'persistent identity preserved' "${PROJECT_DIR}/scripts/init.sh"; then
+        echo "  PASS: init.sh _reset_auth_data logs the preserved-identity message"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: init.sh _reset_auth_data missing preserved-identity log line"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 echo "=========================================="
 echo " Authentication Recovery Tests"
 echo "=========================================="
@@ -82,6 +182,9 @@ echo ""
 test_auth_failures_reset_data_on_threshold
 test_auth_detection_does_not_use_runtime_pid_file
 test_init_does_not_clear_socks_auth_before_configuration
+test_persistent_identity_preserved_on_optin_reset
+test_persistent_identity_removed_on_optout_reset
+test_init_references_persistent_identity_in_reset_log
 
 echo ""
 echo "=========================================="

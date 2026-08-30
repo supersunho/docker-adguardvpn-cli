@@ -12,17 +12,25 @@
 # Library loader
 # =============================================================================
 
-_LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
+_UTILS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_LIB_DIR="${_UTILS_DIR}/lib"
+if [ ! -d "$_LIB_DIR" ]; then
+    _LIB_DIR="/opt/adguardvpn_cli/scripts/lib"
+fi
 
 # Source each module in dependency order.
 # logging.sh must come first since other modules use log().
 # error_handling.sh should be early since it provides die/try/retry.
 # config.sh must come before killswitch_detector.sh because the
 # detector snapshots config values at source time.
+# persistent_identity.sh is sourced unconditionally when present so its
+# functions are always available to PID1, but the apply logic is opt-in via
+# ADGUARD_PERSISTENT_IDENTITY.
 for _module in \
     logging.sh \
     error_handling.sh \
     config.sh \
+    persistent_identity.sh \
     network.sh \
     ip_detection.sh \
     vpn_status.sh \
@@ -37,7 +45,7 @@ for _module in \
     fi
 done
 
-unset _module _path _LIB_DIR
+unset _module _path _UTILS_DIR _LIB_DIR
 
 # =============================================================================
 # Legacy compatibility — no-op

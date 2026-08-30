@@ -18,6 +18,11 @@ jobs:
         runs-on: ubuntu-latest
         permissions:
             contents: write
+            packages: write
+        env:
+            REGISTRY: ghcr.io
+            IMAGE_NAME: ${{ github.repository }}
+            DOCKERHUB_REPO: supersunho/adguardvpn-cli
 
         steps:
             - name: 🏷️ Validate tag formats
@@ -34,6 +39,11 @@ jobs:
                 fi
                 if ! [[ "$PROMOTE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                     echo "❌ promote_to must be a stable semver without suffix (e.g., v2.0.0)" >&2
+                    exit 1
+                fi
+                EXISTING_BASE="${EXISTING_TAG%%-*}"
+                if [ "$EXISTING_BASE" != "$PROMOTE_TAG" ]; then
+                    echo "❌ promote_to must match the pre-release base version: ${EXISTING_BASE} (got ${PROMOTE_TAG})" >&2
                     exit 1
                 fi
                 echo "✅ Tag formats are valid: $EXISTING_TAG → $PROMOTE_TAG"
@@ -75,6 +85,95 @@ jobs:
                 printf 'TARGET_COMMIT=%s\n' "$TARGET_COMMIT" >> "$GITHUB_ENV"
                 echo "✅ Existing pre-release resolves to ${TARGET_COMMIT}"
 
+            - name: 🛠️ Set up registry tooling
+              uses: docker/setup-buildx-action@v3
+
+            - name: 🔑 Login to GHCR
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: 🔑 Login to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            - name: 🐳 Promote multi-arch container images
+              env:
+                  EXISTING_TAG: ${{ inputs.existing_tag }}
+                  PROMOTE_TAG: ${{ inputs.promote_to }}
+                  GHCR_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_REPO }}
+              run: |
+                set -euo pipefail
+
+                SOURCE_VERSION="${EXISTING_TAG#v}"
+                TARGET_VERSION="${PROMOTE_TAG#v}"
+                for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+                    source_ref="${image}:${SOURCE_VERSION}"
+                    target_ref="${image}:${TARGET_VERSION}"
+                    latest_ref="${image}:latest"
+
+                    echo "🔍 Resolving source manifest: ${source_ref}"
+                    source_digest=$(docker buildx imagetools inspect "$source_ref" \
+                        --format '{{.Manifest.Digest}}')
+                    [ -n "$source_digest" ] || {
+                        echo "❌ Source manifest has no digest: ${source_ref}" >&2
+                        exit 1
+                    }
+
+                    existing_target_digest=$(docker buildx imagetools inspect "$target_ref" \
+                        --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+                    if [ -n "$existing_target_digest" ]; then
+                        if [ "$existing_target_digest" != "$source_digest" ]; then
+                            echo "❌ Stable image tag points to a different digest: ${target_ref}" >&2
+                            echo "   source=${source_digest} existing=${existing_target_digest}" >&2
+                            exit 1
+                        fi
+                        echo "♻️ Stable image tag already matches source digest: ${target_ref}"
+                    else
+                        echo "🏷️ Retagging ${source_ref} → ${target_ref}"
+                        docker buildx imagetools create --tag "$target_ref" "$source_ref"
+                    fi
+                    echo "🏷️ Updating ${latest_ref} → ${target_ref}"
+                    docker buildx imagetools create --tag "$latest_ref" "$target_ref"
+
+                    target_digest=$(docker buildx imagetools inspect "$target_ref" \
+                        --format '{{.Manifest.Digest}}')
+                    latest_digest=$(docker buildx imagetools inspect "$latest_ref" \
+                        --format '{{.Manifest.Digest}}')
+                    if [ "$source_digest" != "$target_digest" ] || \
+                       [ "$target_digest" != "$latest_digest" ]; then
+                        echo "❌ Digest mismatch after promotion for ${image}" >&2
+                        echo "   source=${source_digest} target=${target_digest} latest=${latest_digest}" >&2
+                        exit 1
+                    fi
+                    echo "✅ ${image} stable/latest tags match source digest ${source_digest}"
+                done
+
+            - name: 📥 Download pre-release digest assets
+              env:
+                  EXISTING_TAG: ${{ inputs.existing_tag }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                set -euo pipefail
+                rm -rf /tmp/release-digests
+                mkdir -p /tmp/release-digests
+                gh release download "$EXISTING_TAG" \
+                    --repo "$GITHUB_REPOSITORY" \
+                    --pattern 'digest-*.txt' \
+                    --dir /tmp/release-digests \
+                    --clobber
+                shopt -s nullglob
+                assets=(/tmp/release-digests/digest-*.txt)
+                if [ "${#assets[@]}" -eq 0 ]; then
+                    echo "❌ Pre-release has no digest assets to carry forward" >&2
+                    exit 1
+                fi
+
             - name: 🏷️ Create stable tag
               env:
                   EXISTING_TAG: ${{ inputs.existing_tag }}
@@ -97,10 +196,22 @@ jobs:
               with:
                   tag_name: ${{ inputs.promote_to }}
                   name: "AdGuard VPN CLI Release ${{ inputs.promote_to }}"
+                  files: /tmp/release-digests/digest-*.txt
                   body: |
                     **Promoted from:** ${{ inputs.existing_tag }}
 
                     This stable release corresponds to the previously published pre-release.
+
+                    ### ⚠️ Behavioral changes since the pre-release
+
+                    In SOCKS mode, the kill switch now probes the public IP through
+                    the SOCKS5 proxy on every check (same policy as TUN mode).
+                    If all five discovery services (`aws`, `ipify`, `ipinfo`,
+                    `ifconfig`, `ident`) are unreachable, the container is
+                    terminated — the kill switch cannot distinguish a tunnel
+                    failure from a temporary external service outage. To reduce
+                    external call frequency, set
+                    `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL`.
                   prerelease: false
                   make_latest: true
               env:

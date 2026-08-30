@@ -53,6 +53,28 @@ trap _shutdown_handler TERM INT
 # Runs in the background so the container stays up even when
 # ADGUARD_SHOW_LOG=false and ADGUARD_USE_KILL_SWITCH=false.
 supervise_vpn() {
+    # Tunnel establishment takes a few seconds after the connect child
+    # spawns; treat early status checks as "still connecting" instead of
+    # failing the supervisor and shutting the container down.
+    # Cap each tick at 5s and the final wait at the remaining grace so a
+    # user-supplied ADGUARD_VPN_STARTUP_GRACE_SECONDS=1 actually finishes in
+    # ~1s rather than 5s, and grace=6 finishes in ~6s rather than 10s.
+    local grace="${ADGUARD_VPN_STARTUP_GRACE_SECONDS:-30}"
+    local waited=0
+    local sleep_for
+    while [ "${waited}" -lt "${grace}" ]; do
+        if check_adguard_vpn_status; then
+            break
+        fi
+        sleep_for=$((grace - waited))
+        if [ "${sleep_for}" -gt 5 ]; then
+            sleep_for=5
+        fi
+        sleep "${sleep_for}" &
+        wait "$!"
+        waited=$((waited + sleep_for))
+    done
+
     while true; do
         if ! check_adguard_vpn_status; then
             log ERROR "VPN status check failed — supervisor exiting"
@@ -112,20 +134,6 @@ log INFO "AdGuard VPN Container Starting"
 log INFO "Kill Switch: ${ADGUARD_USE_KILL_SWITCH}"
 log INFO "Connection mode: ${ADGUARD_CONNECTION_TYPE}"
 
-# =============================================================================
-# Permission Setup
-# =============================================================================
-
-if [ -c /dev/net/tun ]; then
-    if chmod 666 /dev/net/tun 2>/dev/null; then
-        log DEBUG "/dev/net/tun permissions set to 666"
-    else
-        log INFO "/dev/net/tun already accessible"
-    fi
-else
-    log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
-fi
-
 ensure_data_dir() {
     local data_dir="$1"
 
@@ -151,7 +159,49 @@ ensure_data_dir() {
 }
 
 DATA_DIR="${HOME}/.local/share/adguardvpn-cli"
+# Export the mounted data root so the persistent_identity module and any child
+# shells derive AUTH_* / DATA_DIR consistently.
+export DATA_DIR
 ensure_data_dir "$DATA_DIR"
+
+# Apply the opt-in persistent container identity before any network or CLI
+# startup side effect.  The helper preserves the original exit code (78 on
+# failure) so OAuth/CLI side effects are never reached.  Default
+# ADGUARD_PERSISTENT_IDENTITY=false makes this a no-op that does not touch
+# the filesystem or call `ip` / `sudo`.
+_persistent_identity_apply_main() {
+    if persistent_identity_apply; then
+        return 0
+    fi
+    log_force ERROR "Persistent container identity initialization failed"
+    return 78
+}
+
+identity_rc=0
+_persistent_identity_apply_main || identity_rc=$?
+if [ "${identity_rc}" -ne 0 ]; then
+    exit "${identity_rc}"
+fi
+unset identity_rc
+
+# =============================================================================
+# Permission Setup
+#
+# Moved here so persistent_identity_apply (above) can fail closed at
+# exit 78 BEFORE any /dev/net/tun mode change.  When the opt-in identity
+# fails, neither this block nor any subsequent step (IP detection,
+# init.sh, OAuth/config/connect) runs.
+# =============================================================================
+
+if [ -c /dev/net/tun ]; then
+    if chmod 666 /dev/net/tun 2>/dev/null; then
+        log DEBUG "/dev/net/tun permissions set to 666"
+    else
+        log INFO "/dev/net/tun already accessible"
+    fi
+else
+    log WARN "/dev/net/tun not found — VPN may not work. Ensure device is mapped in docker-compose.yml"
+fi
 
 LOG_FILE="${DATA_DIR}/app.log"
 
@@ -248,9 +298,10 @@ fi
 
 if [ "${ADGUARD_USE_KILL_SWITCH,,}" = "true" ]; then
     log INFO "Activating Kill Switch..."
-    log INFO "Stabilizing VPN connection (5s)..."
-    sleep 5 &
-    wait $!
+    ## The kill-switch process performs its own status/IP polling and waits
+    ## for tunnel activation.  Do not add a blind grace sleep here: it leaves
+    ## the container unmonitored after VPN connect and can be as long as the
+    ## supervisor grace setting (up to 600 seconds).
 
     if [ "$REAL_IP" = "ERROR" ]; then
         log ERROR "Failed to get IP address for kill switch"

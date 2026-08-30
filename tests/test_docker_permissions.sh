@@ -122,6 +122,66 @@ test_compose_ports_are_localhost_only() {
 }
 
 # =============================================================================
+# Test 6: Dockerfile installs sudoers via /etc/sudoers.d/ (hygiene + visudo gate)
+# =============================================================================
+
+test_dockerfile_uses_sudoers_d_file() {
+    local dockerfile="${PROJECT_DIR}/Dockerfile"
+
+    # The legacy pattern `echo ... >> /etc/sudoers` is forbidden because the
+    # main /etc/sudoers is a single point of failure.  A dedicated file under
+    # /etc/sudoers.d/ with mode 0440 and a visudo -cf build gate is the
+    # supported path.
+    if grep -qE '^[^#]*>>[[:space:]]*/etc/sudoers([[:space:]]|$)' "$dockerfile"; then
+        echo "  FAIL: Dockerfile still appends to /etc/sudoers directly"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: Dockerfile does not append to /etc/sudoers"
+        PASS=$((PASS + 1))
+    fi
+
+    if grep -q '/etc/sudoers.d/adguardvpn-cli' "$dockerfile"; then
+        echo "  PASS: Dockerfile installs /etc/sudoers.d/adguardvpn-cli"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile missing /etc/sudoers.d/adguardvpn-cli install"
+        FAIL=$((FAIL + 1))
+    fi
+
+    if grep -q 'chmod 0440 /etc/sudoers.d/adguardvpn-cli' "$dockerfile"; then
+        echo "  PASS: Dockerfile pins sudoers file to mode 0440"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile missing chmod 0440 on sudoers file"
+        FAIL=$((FAIL + 1))
+    fi
+
+    if grep -q 'visudo -cf /etc/sudoers.d/adguardvpn-cli' "$dockerfile"; then
+        echo "  PASS: Dockerfile validates sudoers with visudo -cf"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Dockerfile missing visudo -cf build gate"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
+# Test 7: docker-compose.yml retains NET_ADMIN for persistent identity
+# =============================================================================
+
+test_compose_keeps_net_admin_capability() {
+    local compose="${PROJECT_DIR}/docker-compose.yml"
+
+    if grep -qE 'NET_ADMIN' "$compose"; then
+        echo "  PASS: docker-compose.yml retains NET_ADMIN for ip link set"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: docker-compose.yml lost NET_ADMIN capability"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -139,6 +199,10 @@ echo ""
 test_dockerfile_has_build_args
 echo ""
 test_compose_ports_are_localhost_only
+echo ""
+test_dockerfile_uses_sudoers_d_file
+echo ""
+test_compose_keeps_net_admin_capability
 echo ""
 
 echo "=========================================="

@@ -23,6 +23,16 @@ readonly KS_MAX_WAIT_TIME="${ADGUARD_MAX_WAIT_TIME:-60}"
 # During LEAK_WARNING state, the interval halves for faster detection.
 # Override via ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL environment variable.
 readonly KS_CHECK_INTERVAL="${ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL:-8}"
+# Optional SOCKS-mode check interval. Each iteration probes the public IP
+# through the proxy, so a longer interval reduces external call frequency in
+# SOCKS mode. Falls back to KS_CHECK_INTERVAL when unset or invalid.
+KS_SOCKS_CHECK_INTERVAL_CANDIDATE="${ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL:-${KS_CHECK_INTERVAL}}"
+if ! [[ "$KS_SOCKS_CHECK_INTERVAL_CANDIDATE" =~ ^[1-9][0-9]*$ ]]; then
+    log WARN "Invalid ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL=${KS_SOCKS_CHECK_INTERVAL_CANDIDATE}, falling back to ${KS_CHECK_INTERVAL}"
+    KS_SOCKS_CHECK_INTERVAL_CANDIDATE="$KS_CHECK_INTERVAL"
+fi
+readonly KS_SOCKS_CHECK_INTERVAL="$KS_SOCKS_CHECK_INTERVAL_CANDIDATE"
+unset KS_SOCKS_CHECK_INTERVAL_CANDIDATE
 readonly KS_MAX_LEAK_TOLERANCE="${ADGUARD_MAX_LEAK_TOLERANCE:-0}"
 readonly KS_LEAK_WARNING_ONLY="${ADGUARD_LEAK_WARNING_ONLY:-false}"
 readonly KS_IP_RETRY_COUNT="${ADGUARD_MAX_IP_DETECTION_RETRIES:-3}"
@@ -56,8 +66,13 @@ ks_detect_ip_consistent() {
             echo "$ip"
             return 0
         fi
-        # Locked method failed — treat as ERROR (kill switch will retry via caller)
-        echo "ERROR"
+        ## Locked method failed -- drop the lock so the next call will
+        ## re-discover a working HTTP method.  Without this, a transient
+        ## outage of the locked service makes every subsequent detection
+        ## return ERROR until the kill switch is restarted, which causes
+        ## the tunnel to be torn down even though other services still work.
+        log WARN "Locked HTTP method ${KS_LOCKED_HTTP_ID} failed; re-discovering on next call"
+        KS_LOCKED_HTTP_ID=""
         return 1
     fi
 
@@ -121,13 +136,31 @@ ks_wait_for_vpn_tunnel() {
 
     while [ "$elapsed" -lt "$KS_MAX_WAIT_TIME" ]; do
         if check_adguard_vpn_status; then
-            local temp_ip
-            temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
-            if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ] && \
-               [ "$temp_ip" != "$KS_REAL_IP" ]; then
-                log INFO "VPN tunnel active, IP changed to ${temp_ip}"
-                KS_VPN_IP="$temp_ip"
-                return 0
+            if is_socks_mode; then
+                if ks_socks_port_listening; then
+                    log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Connected)"
+                    ## Set KS_VPN_IP to a sentinel (KS_REAL_IP) so
+                    ## downstream callers can safely inspect it before the
+                    ## first real proxy egress probe in the main loop.
+                    KS_VPN_IP="$KS_REAL_IP"
+                    return 0
+                fi
+                log DEBUG "VPN status is Connected; waiting for SOCKS5 listener..."
+            else
+                local temp_ip
+                temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
+                if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ]; then
+                    if [ "$temp_ip" != "$KS_REAL_IP" ]; then
+                        log INFO "VPN tunnel active, IP changed to ${temp_ip}"
+                        KS_VPN_IP="$temp_ip"
+                        return 0
+                    fi
+                    ## VPN status reports Connected but the detected IP
+                    ## still matches the pre-VPN real IP.  This is the
+                    ## classic TUN propagation race; keep polling until the
+                    ## route has actually changed.
+                    log INFO "VPN status reports Connected; waiting for IP to change (${elapsed}s elapsed)"
+                fi
             fi
 
             if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
@@ -135,9 +168,26 @@ ks_wait_for_vpn_tunnel() {
                     log INFO "Waiting for tunnel propagation... (${elapsed}s / ${KS_MAX_WAIT_TIME}s max)"
                 fi
             fi
+        ## In SOCKS mode, the adguardvpn-cli status output is unstable:
+        ## 5-8 seconds after the initial Connected message, the daemon
+        ## can report Disconnected in steady state even though the SOCKS5
+        ## proxy is still actively listening.  When the status check fails
+        ## in SOCKS mode, fall back to the most authoritative signal we
+        ## have: a "Successfully Connected" line in the tunnel log
+        ## (proves the tunnel was up at least once) AND the SOCKS5 port
+        ## still listening on the configured ADGUARD_SOCKS5_PORT (proves
+        ## the tunnel is up right now).  Both conditions must hold;
+        ## otherwise the tunnel truly is down and we keep waiting.
+        elif is_socks_mode && ks_tunnel_connected_in_log && ks_socks_port_listening; then
+            log INFO "VPN tunnel active (SOCKS5 proxy listening, status=Disconnected in steady state)"
+            ## Keep the same sentinel used by the Connected-status branch so
+            ## callers running with `set -u` can safely inspect KS_VPN_IP.
+            KS_VPN_IP="$KS_REAL_IP"
+            return 0
         else
             log DEBUG "VPN not connected yet..."
         fi
+
 
         sleep "$poll_interval"
         elapsed=$((elapsed + poll_interval))
@@ -155,6 +205,15 @@ ks_wait_for_vpn_tunnel() {
 # Returns: 0 on success, 1 on failure (all retries exhausted)
 # Sets: KS_CURRENT_IP (global) with the detected IP
 ks_detect_current_ip() {
+    #### In SOCKS mode, a Connected status or listening port is only a
+    #### liveness hint.  Always probe through the configured proxy so the
+    #### kill switch can detect both proxy failure and direct-IP fallback.
+    #### The retry loop below provides transient-startup tolerance.
+    if is_socks_mode && ! ks_socks_port_listening; then
+        log ERROR "SOCKS5 proxy port is not listening"
+        return 1
+    fi
+
     KS_CURRENT_IP=""
     local attempt=1
 
@@ -182,9 +241,64 @@ ks_detect_current_ip() {
 
 # Check if the VPN service is currently connected.
 ks_is_vpn_connected() {
+    #### In SOCKS mode, adguardvpn-cli status output is unstable after the
+    #### initial Connected message — it can report Disconnected in steady
+    #### state even though the SOCKS5 proxy is still listening.  We treat
+    #### the local SOCKS5 listener as authoritative when configured for
+    #### SOCKS mode; the HTTP status check is the fallback for TUN.
+    if is_socks_mode && ks_socks_port_listening; then
+        return 0
+    fi
     check_adguard_vpn_status
 }
 
+# Check if the configured SOCKS5 port is currently listening on localhost.
+# Returns 0 if a TCP listener is observed on the port, 1 otherwise.
+ks_socks_port_listening() {
+    local port="${ADGUARD_SOCKS5_PORT:-1080}"
+    case "$(uname -s)" in
+        Linux)
+            _ks_port_listening_linux "$port"
+            ;;
+        Darwin)
+            _ks_port_listening_darwin "$port"
+            ;;
+        *)
+            log WARN "ks_socks_port_listening: unsupported OS $(uname -s); failing closed"
+            return 1
+            ;;
+    esac
+}
+
+# Linux implementation: parse /proc/net/tcp and /proc/net/tcp6 for state 0A (LISTEN).
+_ks_port_listening_linux() {
+    local port="$1"
+    local proc_net_dir="${KS_PROC_NET_DIR:-/proc/net}"
+    local hex_port
+    hex_port=$(printf '%04X' "$port")
+    awk -v want="$hex_port" \
+        '$2 ~ /:'"$hex_port"'$/ && $4 == "0A" {found=1; exit} END{exit !found}' \
+        "${proc_net_dir}/tcp" "${proc_net_dir}/tcp6" 2>/dev/null
+}
+
+# Darwin (macOS) implementation: use lsof to find a LISTEN socket on the port.
+# `lsof` is shipped with macOS by default and is available without extra deps.
+_ks_port_listening_darwin() {
+    local port="$1"
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+# Check if the adguardvpn-cli tunnel log contains a successful Connected
+# entry.  Used as a one-shot liveness check for SOCKS mode: the SOCKS5
+# port listening proves the tunnel is up right now, and the log check
+# proves it has been up at least once (so we are not just hitting a
+# port that some other process is squatting on).
+# Returns: 0 if "Successfully Connected" line found, 1 otherwise.
+ks_tunnel_connected_in_log() {
+    local log_path="${ADGUARD_TUNNEL_LOG_PATH:-/home/appuser/.local/share/adguardvpn-cli/tunnel.log}"
+    [ -r "$log_path" ] || return 1
+    grep -q "Successfully Connected" "$log_path" 2>/dev/null
+}
 # Check if the current IP represents a leak (matches the original real IP).
 ks_is_leak() {
     [ "$KS_CURRENT_IP" = "$KS_REAL_IP" ]
