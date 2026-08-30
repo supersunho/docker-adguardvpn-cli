@@ -424,11 +424,12 @@ test_socks_linux_parser_reads_proc_entries() {
 }
 
 # ---- Test 11: ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL resolution ------
-# detector 모듈이 readonly로 인터벌을 잡기 때문에 각 케이스를 서브 셸에서
-# 다시 source하여 환경변수 분기 결과를 확인한다. 서브 셸에는 테스트와 동일한
-# 의존 모듈을 모두 로드해서 실제 런타임과 같은 환경을 만든다.
+# The detector module locks the interval with `readonly` at source time, so
+# each case re-sources the module inside a subshell to exercise the env-var
+# branch independently. The subshell loads the same dependency modules as
+# the test harness so the resolution matches runtime behaviour.
 _run_interval_probe() {
-    # 함수 인자: 1=$env_override_value ("" means unset)
+    # Function argument: 1=$env_override_value ("" means unset)
     local override="$1"
     local script="
         set +u
@@ -473,7 +474,7 @@ test_socks_check_interval_honors_env_override() {
 
 test_socks_check_interval_rejects_invalid() {
     local result
-    # 음수/문자열/0 은 모두 KS_CHECK_INTERVAL(=8) 로 fallback 해야 한다.
+    # Negative / non-numeric / zero values must all fall back to KS_CHECK_INTERVAL (=8).
     local bad_value
     for bad_value in 0 -5 abc 1.5; do
         result=$(_run_interval_probe "$bad_value")
