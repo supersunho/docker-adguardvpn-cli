@@ -360,6 +360,80 @@ test_new_http_ids_round_trip_via_cache() {
 }
 
 # =============================================================================
+# Test 12: _ip_run_http_method actually dispatches new IDs to the right
+# transport (curl_get for direct, socks5_curl_get for SOCKS) with the right URL.
+# =============================================================================
+
+test_new_http_ids_dispatch_via_stub_curl() {
+    # Replace curl_get / socks5_curl_get with shims that record their
+    # arguments, so we can verify both routing and URL without making
+    # network calls.
+    local shim_dir
+    shim_dir=$(mktemp -d /tmp/ip-cache-shim-XXXXXX)
+    export _IP_STUB_DIRECT_LOG="$shim_dir/direct.log"
+    export _IP_STUB_SOCKS_LOG="$shim_dir/socks.log"
+    : > "$_IP_STUB_DIRECT_LOG"
+    : > "$_IP_STUB_SOCKS_LOG"
+
+    curl_get() {
+        # Append the URL to the direct log; print a fake IP.
+        printf '%s\n' "$*" >> "$_IP_STUB_DIRECT_LOG"
+        printf '203.0.113.7'
+    }
+    socks5_curl_get() {
+        printf '%s\n' "$*" >> "$_IP_STUB_SOCKS_LOG"
+        printf '198.51.100.7'
+    }
+
+    local id expected_url got_url got_via got_ip
+    for id in ifconfig ident; do
+        case "$id" in
+            ifconfig) expected_url="https://ifconfig.co/ip" ;;
+            ident)    expected_url="https://ident.me" ;;
+        esac
+
+        # Direct (TUN) path: use_socks5=false
+        got_url=$(_ip_run_http_method "$id" false 2>/dev/null)
+        if [ "$got_url" = "203.0.113.7" ] && \
+           grep -qF "$expected_url" "$_IP_STUB_DIRECT_LOG"; then
+            echo "  PASS: ${id} dispatches to curl_get with ${expected_url} (direct)"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: ${id} direct dispatch: got url '$(tail -1 "$_IP_STUB_DIRECT_LOG" 2>/dev/null)' ip '${got_url}'"
+            FAIL=$((FAIL + 1))
+        fi
+
+        # SOCKS path: use_socks5=true
+        got_via=$(_ip_run_http_method "$id" true 2>/dev/null)
+        if [ "$got_via" = "198.51.100.7" ] && \
+           grep -qF "$expected_url" "$_IP_STUB_SOCKS_LOG"; then
+            echo "  PASS: ${id} dispatches to socks5_curl_get with ${expected_url} (SOCKS)"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: ${id} SOCKS dispatch: got url '$(tail -1 "$_IP_STUB_SOCKS_LOG" 2>/dev/null)' ip '${got_via}'"
+            FAIL=$((FAIL + 1))
+        fi
+    done
+
+    unset _IP_STUB_DIRECT_LOG _IP_STUB_SOCKS_LOG
+    rm -rf "$shim_dir"
+}
+
+test_new_http_ids_reject_unknown_id() {
+    # An ID outside the allowlist must not call any transport; the function
+    # returns 1 and produces no output.
+    local out
+    out=$(_ip_run_http_method "not_in_allowlist" false 2>/dev/null || true)
+    if [ -z "$out" ]; then
+        echo "  PASS: unknown HTTP ID rejected silently"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: unknown ID leaked output: '${out}'"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -393,6 +467,10 @@ echo ""
 test_new_http_ids_registered
 echo ""
 test_new_http_ids_round_trip_via_cache
+echo ""
+test_new_http_ids_dispatch_via_stub_curl
+echo ""
+test_new_http_ids_reject_unknown_id
 echo ""
 
 echo "=========================================="
