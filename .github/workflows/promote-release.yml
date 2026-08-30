@@ -36,6 +36,11 @@ jobs:
                     echo "❌ promote_to must be a stable semver without suffix (e.g., v2.0.0)" >&2
                     exit 1
                 fi
+                EXISTING_BASE="${EXISTING_TAG%%-*}"
+                if [ "$EXISTING_BASE" != "$PROMOTE_TAG" ]; then
+                    echo "❌ promote_to must match the pre-release base version: ${EXISTING_BASE} (got ${PROMOTE_TAG})" >&2
+                    exit 1
+                fi
                 echo "✅ Tag formats are valid: $EXISTING_TAG → $PROMOTE_TAG"
 
             - name: 📦 Checkout

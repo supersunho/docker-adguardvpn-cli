@@ -222,6 +222,52 @@ test_promotion_workflow_uses_safe_inputs() {
 }
 
 # =============================================================================
+# Test 13: Stable promotion must use the pre-release's version base
+# =============================================================================
+
+test_promotion_requires_matching_version_base() {
+    local workflow="${PROJECT_DIR}/.github/workflows/promote-release.yml"
+    local validation
+    # Extract the exact validation script from the workflow so these cases do
+    # not duplicate its semver or version-matching logic in the test.
+    validation=$(awk '
+        /^[[:space:]]+run: \|$/ { in_run=1; next }
+        in_run && /^[[:space:]]+- name:/ { exit }
+        in_run {
+            sub(/^                /, "")
+            print
+        }
+    ' "$workflow")
+
+    local mismatch_output
+    if mismatch_output=$(EXISTING_TAG="v2.1.0-beta.2" PROMOTE_TAG="v3.0.0" \
+        bash -c "$validation" 2>&1); then
+        echo "  FAIL: Promotion validation accepted mismatched version bases"
+        echo "$mismatch_output"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    if ! grep -q 'must match the pre-release base version' <<< "$mismatch_output"; then
+        echo "  FAIL: Mismatched version bases did not produce a clear error"
+        echo "$mismatch_output"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    local matching_output
+    if matching_output=$(EXISTING_TAG="v2.1.0-beta.2" PROMOTE_TAG="v2.1.0" \
+        bash -c "$validation" 2>&1); then
+        echo "  PASS: Promotion rejects mismatched bases and accepts matching bases"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: Promotion validation rejected a matching version base"
+        echo "$matching_output"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# =============================================================================
 # Test 3: Version validation exists
 # =============================================================================
 
@@ -306,6 +352,8 @@ echo ""
 test_release_publishes_after_upload
 echo ""
 test_promotion_workflow_uses_safe_inputs
+echo ""
+test_promotion_requires_matching_version_base
 echo ""
 
 echo "=========================================="
