@@ -203,6 +203,7 @@ This example follows the repository default and uses the `./data` bind mount. Co
 | **Kill switch** | | | |
 | `ADGUARD_USE_KILL_SWITCH` | Enable kill switch to prevent IP leaks when VPN drops | `true` | `true` / `false` |
 | `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL` | Kill switch check interval in seconds | `8` | Positive integer |
+| `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` | Kill switch check interval when `ADGUARD_CONNECTION_TYPE=SOCKS` (unset = same as `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`) | _(empty)_ | Positive integer |
 | `ADGUARD_MAX_LEAK_TOLERANCE` | Number of leak detections before termination (0 = immediate) | `0` | Positive integer |
 | `ADGUARD_LEAK_WARNING_ONLY` | Only warn on leaks, do not terminate | `false` | `true` / `false` |
 | `ADGUARD_VPN_STARTUP_GRACE_SECONDS` | Seconds allowed for VPN tunnel to establish before supervisor treats not-connected as failure | `30` | Integer 0-600 |
@@ -494,6 +495,21 @@ To confirm the VPN tunnel is active and your traffic is routed through it:
    docker compose exec adguard-vpn-cli adguardvpn-cli disconnect
    ```
    The kill switch should detect the leak and terminate the container within the configured check interval.
+
+### SOCKS mode IP detection
+
+When `ADGUARD_CONNECTION_TYPE=SOCKS`, the kill switch probes the public IP through the SOCKS5 proxy on every check so it can tell a real leak apart from the listener staying open. The probe pool is a small set of public IP-echo services:
+
+- `aws` — `https://checkip.amazonaws.com`
+- `ipify` — `https://api.ipify.org`
+- `ipinfo` — `https://ipinfo.io/ip`
+- `ifconfig` — `https://ifconfig.co/ip`
+- `ident` — `https://ident.me`
+
+The first call picks a working service in fixed order, locks to it for the lifetime of the kill switch process, and re-discovers only when that service fails. In TUN mode, four DNS-based methods are also available, so the TUN pool is larger (DNS is intentionally skipped in SOCKS mode because DNS would bypass the proxy).
+
+> [!IMPORTANT]
+> In SOCKS mode the kill switch treats the proxy as down whenever all five services are unreachable on a given check and **terminates the container** — it cannot distinguish a tunnel failure from a transient external outage. To reduce how often the kill switch calls out, raise `ADGUARD_USE_KILL_SWITCH_SOCKS_CHECK_INTERVAL` (for example, `15` or `30`). Unset or invalid values fall back to `ADGUARD_USE_KILL_SWITCH_CHECK_INTERVAL`.
 
 <!-- SECURITY CONSIDERATIONS -->
 
