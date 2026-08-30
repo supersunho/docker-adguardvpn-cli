@@ -136,22 +136,21 @@ ks_wait_for_vpn_tunnel() {
                     return 0
                 fi
                 log DEBUG "VPN status is Connected; waiting for SOCKS5 listener..."
-            fi
-            local temp_ip
-            temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
-            if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ]; then
-                if [ "$temp_ip" != "$KS_REAL_IP" ]; then
-                    log INFO "VPN tunnel active, IP changed to ${temp_ip}"
-                    KS_VPN_IP="$temp_ip"
-                    return 0
+            else
+                local temp_ip
+                temp_ip=$(ks_detect_ip_consistent 2>/dev/null) || true
+                if [ -n "$temp_ip" ] && [ "$temp_ip" != "ERROR" ]; then
+                    if [ "$temp_ip" != "$KS_REAL_IP" ]; then
+                        log INFO "VPN tunnel active, IP changed to ${temp_ip}"
+                        KS_VPN_IP="$temp_ip"
+                        return 0
+                    fi
+                    ## VPN status reports Connected but the detected IP
+                    ## still matches the pre-VPN real IP.  This is the
+                    ## classic TUN propagation race; keep polling until the
+                    ## route has actually changed.
+                    log INFO "VPN status reports Connected; waiting for IP to change (${elapsed}s elapsed)"
                 fi
-                ## VPN status reports Connected but the detected IP still
-                ## matches the pre-VPN real IP.  This is the classic
-                ## TUN/SOCKS propagation race: routes flip a few hundred ms
-                ## after the daemon says it is up.  Trust the daemon and let
-                ## the main loop re-check on the next iteration.  The hard
-                ## KS_MAX_WAIT_TIME timeout below still terminates.
-                log INFO "VPN status reports Connected; waiting for IP to change (${elapsed}s elapsed)"
             fi
 
             if [ $((elapsed % 5)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
