@@ -268,6 +268,33 @@ test_promotion_requires_matching_version_base() {
 }
 
 # =============================================================================
+# Test 14: Stable promotion retags and verifies both container registries
+# =============================================================================
+
+test_promotion_promotes_container_images() {
+    local workflow="${PROJECT_DIR}/.github/workflows/promote-release.yml"
+    local promotion_block
+    promotion_block=$(sed -n '/- name: 🐳 Promote multi-arch container images/,/- name: 📥 Download pre-release digest assets/p' "$workflow")
+
+    if ! grep -q 'packages: write' "$workflow" || \
+       ! grep -q 'docker/setup-buildx-action@v3' "$workflow" || \
+       [ "$(grep -c 'docker/login-action@v3' "$workflow")" -lt 2 ] || \
+       ! grep -q 'docker buildx imagetools create' <<< "$promotion_block" || \
+       ! grep -q 'source_digest' <<< "$promotion_block" || \
+       ! grep -q 'latest_digest' <<< "$promotion_block"; then
+        echo "  FAIL: Stable promotion does not retag and verify container images"
+        FAIL=$((FAIL + 1))
+    elif ! grep -q 'files: /tmp/release-digests/digest-\*\.txt' "$workflow" || \
+         ! grep -q 'gh release download' "$workflow"; then
+        echo "  FAIL: Stable promotion does not carry digest assets forward"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: Stable promotion retags registries and carries digest assets"
+        PASS=$((PASS + 1))
+    fi
+}
+
+# =============================================================================
 # Test 14: Compose configuration validation gates the image build
 # =============================================================================
 
@@ -376,6 +403,8 @@ echo ""
 test_promotion_workflow_uses_safe_inputs
 echo ""
 test_promotion_requires_matching_version_base
+echo ""
+test_promotion_promotes_container_images
 echo ""
 test_compose_config_is_build_gate
 echo ""
